@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.OptiClassAn_Integrated_University_Scheduling_and_XAIDriven_Calendar_Portal" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

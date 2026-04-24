@@ -14,6 +14,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -34,7 +36,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -82,7 +83,7 @@ data class User(
     val fullName: String,
     val email: String,
     val courses: MutableList<CourseImport> = mutableListOf(),
-    val schedule: MutableMap<String, MutableMap<String, CourseImport?>> = mutableMapOf() // Day -> (TimeSlot -> Course)
+    val schedule: SnapshotStateMap<String, SnapshotStateMap<String, CourseImport?>> = mutableStateMapOf()
 )
 
 // Global in-memory state
@@ -90,7 +91,7 @@ val globalMessages = mutableStateListOf<Message>()
 val globalNotifications = mutableStateListOf<AppNotification>()
 val globalAvailabilities = mutableStateListOf<Availability>()
 val globalCourseImports = mutableStateListOf<CourseImport>()
-val globalUsers = mutableStateListOf<User>(
+val globalUsers = mutableStateListOf(
     User("admin", "admin123", UserRole.ADMIN, "System Admin", "admin@opticlass.com"),
     User("berkay", "berkay123", UserRole.INSTRUCTOR, "Berkay", "berkay@example.com")
 )
@@ -353,14 +354,16 @@ fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit) {
             Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
                 when {
                     role == UserRole.ADMIN && currentDestination == AppDestinations.MAIN_PAGE -> AdminMainPage(userName)
+                    role == UserRole.INSTRUCTOR && currentDestination == AppDestinations.MAIN_PAGE -> InstructorMainPage(userName)
                     role == UserRole.INSTRUCTOR && currentDestination == AppDestinations.NOTIFICATIONS -> ChatBox(userName, "admin")
                     currentDestination == AppDestinations.MY_AVAILABILITY -> MyAvailabilityPage(userName)
                     currentDestination == AppDestinations.MY_LECTURES -> MyLecturesPage(userName)
                     currentDestination == AppDestinations.MY_SCHEDULE -> MySchedulePage(userName)
                     currentDestination == AppDestinations.INSTRUCTOR_AVAILABILITY -> InstructorAvailabilityAdminPage()
-                    currentDestination == AppDestinations.DATA_IMPORT -> DataImportPage()
+                    currentDestination == AppDestinations.DATA_IMPORT -> DataImportPage(snackbarHostState)
                     currentDestination == AppDestinations.USER_TRANSACTIONS -> UserTransactionsPage()
-                    currentDestination == AppDestinations.UPDATE_CALENDAR -> UpdateCalendarPage()
+                    currentDestination == AppDestinations.UPDATE_CALENDAR -> UpdateCalendarPage(snackbarHostState)
+                    currentDestination == AppDestinations.SETTINGS -> SettingsPage(userName)
                     else -> GenericPage(currentDestination.label)
                 }
             }
@@ -417,17 +420,18 @@ fun MyLecturesPage(userName: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UpdateCalendarPage() {
+fun UpdateCalendarPage(snackbarHostState: SnackbarHostState) {
     var expanded by remember { mutableStateOf(false) }
     var selectedUser by remember { mutableStateOf<User?>(null) }
     val instructors = globalUsers.filter { it.role == UserRole.INSTRUCTOR }
     val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
 
-    // State to track which course is currently selected for assignment
     var selectedCourseToAssign by remember { mutableStateOf<CourseImport?>(null) }
+    
+    // Warning Dialog State
+    var showAvailabilityWarning by remember { mutableStateOf<Pair<String, String>?>(null) } // Day, Slot
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         Text("Update Calendar", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(24.dp))
         
@@ -471,11 +475,9 @@ fun UpdateCalendarPage() {
             val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri")
             val timeSlots = listOf("08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM")
             
-            // Instructor's availability
             val availability = globalAvailabilities.find { it.instructorName == user.username }
             val availableSlots = availability?.slots ?: emptyMap()
             
-            // Local state for the scheduling draft - Reactive nested maps
             val draftSchedule = remember(user.username) {
                 val map = mutableStateMapOf<String, SnapshotStateMap<String, CourseImport?>>()
                 days.forEach { day -> 
@@ -505,18 +507,47 @@ fun UpdateCalendarPage() {
             Text("Scheduling Grid:", style = MaterialTheme.typography.titleSmall)
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Grid for scheduling
-            SchedulingGridEnhanced(days, timeSlots, availableSlots, draftSchedule, selectedCourseToAssign)
+            SchedulingGridEnhanced(
+                days, timeSlots, availableSlots, draftSchedule, selectedCourseToAssign,
+                onCellClick = { day, slot ->
+                    if (selectedCourseToAssign != null) {
+                        val isAvailable = availableSlots[day]?.contains(slot) == true
+                        if (!isAvailable) {
+                            showAvailabilityWarning = day to slot
+                        } else {
+                            draftSchedule[day]?.set(slot, selectedCourseToAssign)
+                        }
+                    }
+                }
+            )
+
+            if (showAvailabilityWarning != null) {
+                AlertDialog(
+                    onDismissRequest = { showAvailabilityWarning = null },
+                    title = { Text("Availability Warning") },
+                    text = { Text("The instructor is not available at this time (${showAvailabilityWarning?.first} ${showAvailabilityWarning?.second}), are you sure about assigning this hour?") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val (d, s) = showAvailabilityWarning!!
+                            draftSchedule[d]?.set(s, selectedCourseToAssign)
+                            showAvailabilityWarning = null
+                        }) { Text("Yes, Assign") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showAvailabilityWarning = null }) { Text("Cancel") }
+                    }
+                )
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = {
-                    // Save to user's schedule
                     user.schedule.clear()
                     draftSchedule.forEach { (day, slots) ->
-                        user.schedule[day] = slots.toMutableMap()
+                        val innerMap = mutableStateMapOf<String, CourseImport?>()
+                        innerMap.putAll(slots)
+                        user.schedule[day] = innerMap
                     }
-                    // Send notification to instructor
                     globalNotifications.add(AppNotification(
                         id = System.currentTimeMillis().toString(),
                         text = "Admin updated your weekly schedule. Please check 'My Schedule'."
@@ -528,7 +559,6 @@ fun UpdateCalendarPage() {
                 Text("Save & Notify Instructor")
             }
         }
-        SnackbarHost(hostState = snackbarHostState)
     }
 }
 
@@ -553,13 +583,12 @@ fun SchedulingGridEnhanced(
     timeSlots: List<String>, 
     availableSlots: Map<String, Set<String>>,
     draftSchedule: MutableMap<String, SnapshotStateMap<String, CourseImport?>>,
-    selectedCourse: CourseImport?
+    selectedCourse: CourseImport?,
+    onCellClick: (String, String) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth().border(1.dp, Color.LightGray)) {
-        // Header
         Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(MaterialTheme.colorScheme.secondaryContainer)) {
             Box(modifier = Modifier.width(80.dp).padding(8.dp)) { Text("Time", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
-            // Vertical Line between Time and Monday
             Box(modifier = Modifier.fillMaxHeight().width(1.dp).background(Color.Gray))
             days.forEach { day ->
                 Box(modifier = Modifier.weight(1f).padding(8.dp), contentAlignment = Alignment.Center) {
@@ -567,19 +596,17 @@ fun SchedulingGridEnhanced(
                 }
             }
         }
-        // Body
-        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
-            items(timeSlots) { slot ->
+        Column(modifier = Modifier.fillMaxWidth()) {
+            timeSlots.forEach { slot ->
                 Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).border(0.5.dp, Color.LightGray)) {
                     Box(modifier = Modifier.width(80.dp).padding(8.dp).background(Color(0xFFF9F9F9))) {
                         Text(slot, fontSize = 9.sp)
                     }
-                    // Vertical Line between Time and Monday
                     Box(modifier = Modifier.fillMaxHeight().width(1.dp).background(Color.LightGray))
                     days.forEach { day ->
                         val isAvailable = availableSlots[day]?.contains(slot) == true
                         val scheduledCourse = draftSchedule[day]?.get(slot)
-                        
+
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -593,9 +620,7 @@ fun SchedulingGridEnhanced(
                                     }
                                 )
                                 .clickable {
-                                    if (selectedCourse != null) {
-                                        draftSchedule[day]?.set(slot, selectedCourse)
-                                    }
+                                    onCellClick(day, slot)
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -630,7 +655,6 @@ fun MySchedulePage(userName: String) {
         Column(modifier = Modifier.fillMaxWidth().border(1.dp, Color.Gray)) {
             Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(MaterialTheme.colorScheme.primaryContainer)) {
                 Box(modifier = Modifier.width(80.dp).padding(8.dp)) { Text("Time", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
-                // Vertical Line
                 Box(modifier = Modifier.fillMaxHeight().width(1.dp).background(Color.Gray))
                 days.forEach { day ->
                     Box(modifier = Modifier.weight(1f).padding(8.dp), contentAlignment = Alignment.Center) { Text(day, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
@@ -640,7 +664,6 @@ fun MySchedulePage(userName: String) {
                 items(timeSlots) { slot ->
                     Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).border(0.5.dp, Color.LightGray)) {
                         Box(modifier = Modifier.width(80.dp).padding(8.dp).background(Color(0xFFF5F5F5))) { Text(slot, fontSize = 10.sp) }
-                        // Vertical Line
                         Box(modifier = Modifier.fillMaxHeight().width(1.dp).background(Color.LightGray))
                         days.forEach { day ->
                             val course = user.schedule[day]?.get(slot)
@@ -665,10 +688,9 @@ fun MySchedulePage(userName: String) {
 }
 
 @Composable
-fun DataImportPage() {
+fun DataImportPage(snackbarHostState: SnackbarHostState) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
     
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -690,7 +712,6 @@ fun DataImportPage() {
             Text("Course Data Import", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Visual Template Example - Much better format
             Card(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 shape = RoundedCornerShape(12.dp),
@@ -705,7 +726,6 @@ fun DataImportPage() {
                     }
                     Spacer(Modifier.height(12.dp))
                     
-                    // Mini Table Representation
                     Row(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface, RoundedCornerShape(4.dp)).padding(4.dp)) {
                         listOf("Code", "Name", "Lecturer", "Dept", "Email").forEach { 
                             Text(it, modifier = Modifier.weight(1f), fontSize = 10.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary)
@@ -820,7 +840,6 @@ fun DataImportPage() {
             }
         }
 
-        // FAB
         FloatingActionButton(
             onClick = { filePickerLauncher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") },
             modifier = Modifier
@@ -833,7 +852,6 @@ fun DataImportPage() {
             Icon(Icons.Default.Add, contentDescription = "Select Excel File", tint = Color.White)
         }
         
-        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 
@@ -842,12 +860,10 @@ fun saveCourseImport(course: CourseImport) {
     val existingUser = globalUsers.find { it.username.lowercase() == username }
     
     if (existingUser != null) {
-        // If user exists, add course if it's not already in their list
         if (existingUser.courses.none { it.code == course.code }) {
             existingUser.courses.add(course)
         }
     } else {
-        // Create new instructor user
         val newUser = User(
             username = username,
             password = "${username}123",
@@ -871,22 +887,16 @@ private suspend fun importExcelData(context: Context, uri: Uri): Boolean {
             val rows = sheet.iterator()
             val formatter = DataFormatter()
             
-            // Skip header row
             if (rows.hasNext()) rows.next()
             
             val importedList = mutableListOf<CourseImport>()
             while (rows.hasNext()) {
                 val row = rows.next()
                 
-                // Column A: Course Code
                 val code = formatter.formatCellValue(row.getCell(0)).trim()
-                // Column B: Course Name
                 val name = formatter.formatCellValue(row.getCell(1)).trim()
-                // Column C: Lecturer
                 val lecturer = formatter.formatCellValue(row.getCell(2)).trim()
-                // Column D: Department
                 val department = formatter.formatCellValue(row.getCell(3)).trim()
-                // Column E: Email
                 val email = formatter.formatCellValue(row.getCell(4)).trim()
                 
                 if (code.isNotEmpty() && name.isNotEmpty()) {
@@ -924,7 +934,54 @@ fun MyAvailabilityPage(instructorName: String) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Your Availability", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
-        AvailabilityTable(days, timeSlots, selectedSlots)
+        
+        Column(modifier = Modifier.fillMaxWidth().border(1.dp, Color.Gray)) {
+            Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(MaterialTheme.colorScheme.primaryContainer)) {
+                Box(modifier = Modifier.width(80.dp).padding(8.dp)) { Text("Time", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                Box(modifier = Modifier.fillMaxHeight().width(1.dp).background(Color.Gray))
+                days.forEach { day ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(8.dp)
+                            .clickable {
+                                val currentSet = selectedSlots[day] ?: mutableSetOf()
+                                if (currentSet.size == timeSlots.size) {
+                                    selectedSlots[day] = mutableSetOf()
+                                } else {
+                                    selectedSlots[day] = timeSlots.toMutableSet()
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) { 
+                        Text(day, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary) 
+                    }
+                }
+            }
+            
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)) {
+                items(timeSlots) { slot ->
+                    Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).border(0.5.dp, Color.LightGray)) {
+                        Box(modifier = Modifier.width(80.dp).padding(8.dp).background(Color(0xFFF5F5F5))) { Text(slot, fontSize = 10.sp) }
+                        Box(modifier = Modifier.fillMaxHeight().width(1.dp).background(Color.LightGray))
+                        days.forEach { day ->
+                            val isSelected = selectedSlots[day]?.contains(slot) == true
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f).height(40.dp).border(0.5.dp, Color.LightGray)
+                                    .background(if (isSelected) Color.Green.copy(alpha = 0.3f) else Color.Transparent)
+                                    .clickable {
+                                        val currentSet = selectedSlots[day] ?: mutableSetOf()
+                                        val newSet = currentSet.toMutableSet()
+                                        if (isSelected) newSet.remove(slot) else newSet.add(slot)
+                                        selectedSlots[day] = newSet
+                                    }
+                            )
+                        }
+                    }
+                }
+            }
+        }
         
         Spacer(modifier = Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -946,7 +1003,6 @@ fun AvailabilityTable(days: List<String>, timeSlots: List<String>, selectedSlots
     Column(modifier = Modifier.fillMaxWidth().border(1.dp, Color.Gray)) {
         Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(MaterialTheme.colorScheme.primaryContainer)) {
             Box(modifier = Modifier.width(80.dp).padding(8.dp)) { Text("Time", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
-            // Vertical Line
             Box(modifier = Modifier.fillMaxHeight().width(1.dp).background(Color.Gray))
             days.forEach { day ->
                 Box(modifier = Modifier.weight(1f).padding(8.dp), contentAlignment = Alignment.Center) { Text(day, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
@@ -956,7 +1012,6 @@ fun AvailabilityTable(days: List<String>, timeSlots: List<String>, selectedSlots
             items(timeSlots) { slot ->
                 Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min).border(0.5.dp, Color.LightGray)) {
                     Box(modifier = Modifier.width(80.dp).padding(8.dp).background(Color(0xFFF5F5F5))) { Text(slot, fontSize = 10.sp) }
-                    // Vertical Line
                     Box(modifier = Modifier.fillMaxHeight().width(1.dp).background(Color.LightGray))
                     days.forEach { day ->
                         val isSelected = selectedSlots[day]?.contains(slot) == true
@@ -1009,16 +1064,19 @@ fun InstructorAvailabilityAdminPage() {
             }
         } else {
             val availability = globalAvailabilities.find { it.instructorName == selectedInstructor }
-            TextButton(onClick = { selectedInstructor = null }) {
-                Text("< Back to list")
-            }
             if (availability != null) {
+                TextButton(onClick = { selectedInstructor = null }) {
+                    Text("< Back to list")
+                }
                 Text("Availability for ${availability.instructorName}", style = MaterialTheme.typography.titleLarge)
                 Spacer(modifier = Modifier.height(16.dp))
+                val readOnlySlots = remember(availability.instructorName) {
+                    availability.slots.mapValues { it.value.toMutableSet() }.toMutableMap()
+                }
                 AvailabilityTable(
                     days = listOf("Mon", "Tue", "Wed", "Thu", "Fri"),
                     timeSlots = listOf("08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"),
-                    selectedSlots = availability.slots.mapValues { it.value.toMutableSet() }.toMutableMap(),
+                    selectedSlots = readOnlySlots,
                     isReadOnly = true
                 )
             }
@@ -1091,13 +1149,350 @@ fun ChatBox(currentUserName: String, targetUserName: String) {
 
 @Composable
 fun UserTransactionsPage() {
+    var showAddDialog by remember { mutableStateOf(false) }
+    var userToDelete by remember { mutableStateOf<User?>(null) }
+    var userToEdit by remember { mutableStateOf<User?>(null) }
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("User Transactions", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(16.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) { IconButton(onClick = { /* TODO: Add user */ }) { Icon(Icons.Default.Add, null, Modifier.size(48.dp)) }; Text("Add") }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) { IconButton(onClick = { /* TODO: Delete user */ }) { Icon(Icons.Default.Clear, null, Modifier.size(48.dp)) }; Text("Delete") }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) { IconButton(onClick = { /* TODO: Update user */ }) { Icon(Icons.Default.Star, null, Modifier.size(48.dp)) }; Text("Update") }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("User Transactions", style = MaterialTheme.typography.headlineMedium)
+            Button(onClick = { showAddDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text("Add User")
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("All Users (${globalUsers.size})", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+        Spacer(Modifier.height(12.dp))
+
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(globalUsers) { user ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(user.fullName, fontWeight = FontWeight.Bold)
+                            Text(
+                                "@${user.username} · ${user.role.name}",
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                            if (user.email.isNotBlank()) {
+                                Text(user.email, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                            }
+                        }
+                        IconButton(onClick = { userToEdit = user }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary)
+                        }
+                        if (user.role != UserRole.ADMIN) {
+                            IconButton(onClick = { userToDelete = user }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        AddUserDialog(
+            onDismiss = { showAddDialog = false },
+            onAdd = { newUser ->
+                globalUsers.add(newUser)
+                showAddDialog = false
+            }
+        )
+    }
+
+    if (userToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { userToDelete = null },
+            title = { Text("Delete User") },
+            text = { Text("Are you sure you want to delete \"${userToDelete!!.fullName}\"? This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val target = userToDelete!!.username
+                    globalUsers.removeAll { it.username == target }
+                    userToDelete = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { userToDelete = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (userToEdit != null) {
+        EditUserDialog(
+            user = userToEdit!!,
+            onDismiss = { userToEdit = null },
+            onSave = { updated ->
+                val index = globalUsers.indexOfFirst { it.username == updated.username }
+                if (index != -1) globalUsers[index] = updated
+                userToEdit = null
+            }
+        )
+    }
+}
+
+@Composable
+fun AddUserDialog(onDismiss: () -> Unit, onAdd: (User) -> Unit) {
+    var username by remember { mutableStateOf("") }
+    var fullName by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var role by remember { mutableStateOf(UserRole.INSTRUCTOR) }
+    var errorMsg by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add New User") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = username, onValueChange = { username = it },
+                    label = { Text("Username") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+                )
+                OutlinedTextField(
+                    value = fullName, onValueChange = { fullName = it },
+                    label = { Text("Full Name") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+                )
+                OutlinedTextField(
+                    value = email, onValueChange = { email = it },
+                    label = { Text("Email") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+                )
+                OutlinedTextField(
+                    value = password, onValueChange = { password = it },
+                    label = { Text("Password") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(), singleLine = true
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Role:", style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.width(8.dp))
+                    UserRole.entries.forEach { r ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = role == r, onClick = { role = r })
+                            Text(r.name, fontSize = 13.sp)
+                            Spacer(Modifier.width(4.dp))
+                        }
+                    }
+                }
+                if (errorMsg.isNotEmpty()) {
+                    Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val trimmedUsername = username.trim()
+                when {
+                    trimmedUsername.isBlank() -> errorMsg = "Username is required"
+                    globalUsers.any { it.username.equals(trimmedUsername, ignoreCase = true) } -> errorMsg = "Username already exists"
+                    fullName.isBlank() -> errorMsg = "Full name is required"
+                    password.length < 6 -> errorMsg = "Password must be at least 6 characters"
+                    else -> onAdd(User(trimmedUsername.lowercase(), password, role, fullName.trim(), email.trim()))
+                }
+            }) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+fun EditUserDialog(user: User, onDismiss: () -> Unit, onSave: (User) -> Unit) {
+    var fullName by remember { mutableStateOf(user.fullName) }
+    var email by remember { mutableStateOf(user.email) }
+    var password by remember { mutableStateOf(user.password) }
+    var errorMsg by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit User") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Username: @${user.username}", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+                OutlinedTextField(
+                    value = fullName, onValueChange = { fullName = it },
+                    label = { Text("Full Name") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+                )
+                OutlinedTextField(
+                    value = email, onValueChange = { email = it },
+                    label = { Text("Email") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+                )
+                OutlinedTextField(
+                    value = password, onValueChange = { password = it },
+                    label = { Text("Password") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(), singleLine = true
+                )
+                if (errorMsg.isNotEmpty()) {
+                    Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                when {
+                    fullName.isBlank() -> errorMsg = "Full name is required"
+                    password.length < 6 -> errorMsg = "Password must be at least 6 characters"
+                    else -> onSave(user.copy(fullName = fullName.trim(), email = email.trim(), password = password))
+                }
+            }) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+fun InstructorMainPage(userName: String) {
+    val user = globalUsers.find { it.username == userName } ?: return
+    val unreadMessages = globalMessages.count { it.recipient == userName && !it.isRead }
+    val unreadNotifs = globalNotifications.count { !it.isRead }
+    val availabilitySubmitted = globalAvailabilities.any { it.instructorName == userName }
+
+    val timeSlots = listOf("08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM")
+    val dayMap = mapOf(2 to "Mon", 3 to "Tue", 4 to "Wed", 5 to "Thu", 6 to "Fri")
+    val todayKey = dayMap[java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_WEEK)]
+    val todayClasses = if (todayKey != null) {
+        timeSlots.mapNotNull { slot ->
+            val course = user.schedule[todayKey]?.get(slot)
+            if (course != null) slot to course else null
+        }
+    } else emptyList()
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(
+            "Welcome, ${user.fullName}",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SummaryCard(modifier = Modifier.weight(1f), title = "Courses", value = user.courses.size.toString(), icon = Icons.Default.Menu)
+            SummaryCard(modifier = Modifier.weight(1f), title = "Messages", value = unreadMessages.toString(), icon = Icons.Default.Email)
+            SummaryCard(modifier = Modifier.weight(1f), title = "Alerts", value = unreadNotifs.toString(), icon = Icons.Default.Notifications)
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = if (availabilitySubmitted)
+                    Color.Green.copy(alpha = 0.1f)
+                else
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+            )
+        ) {
+            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (availabilitySubmitted) Icons.Default.Check else Icons.Default.Info,
+                    contentDescription = null,
+                    tint = if (availabilitySubmitted) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    if (availabilitySubmitted)
+                        "Availability submitted to admin"
+                    else
+                        "Availability not submitted yet — go to 'My Availability'",
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        Text("Today's Classes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        if (todayClasses.isEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Box(modifier = Modifier.padding(24.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text(
+                        if (todayKey == null) "No classes on weekends" else "No classes scheduled for today",
+                        color = Color.Gray
+                    )
+                }
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(todayClasses) { (slot, course) ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(slot, style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(80.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(course.code, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(
+                                    course.name,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SummaryCard(modifier: Modifier = Modifier, title: String, value: String, icon: ImageVector) {
+    Card(modifier = modifier, elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
+        Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+            Spacer(Modifier.height(4.dp))
+            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(title, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+        }
+    }
+}
+
+@Composable
+fun SettingsPage(userName: String) {
+    val user = globalUsers.find { it.username == userName }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(24.dp))
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Profile", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                if (user != null) {
+                    Text("Name:      ${user.fullName}")
+                    Text("Username:  @${user.username}")
+                    Text("Role:      ${user.role.name}")
+                    if (user.email.isNotBlank()) Text("Email:     ${user.email}")
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("About", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                Text("OptiClass v1.0")
+                Text(
+                    "University Scheduling & XAI-Driven Calendar Portal",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
         }
     }
 }

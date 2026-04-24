@@ -1,15 +1,38 @@
+# ---- Android Studio / IntelliJ ----
 *.iml
 .gradle
-/local.properties
 /.idea/caches
 /.idea/libraries
 /.idea/modules.xml
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
 .externalNativeBuild
 .cxx
+
+# ---- Build outputs ----
+/build
+app/build/
+*.apk
+*.aab
+*.dex
+
+# ---- Local config (machine-specific) ----
 local.properties
+
+# ---- OS files ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Keystore / signing (never share) ----
+*.jks
+*.keystore
+*.p12
+
+# ---- Project documentation ----
+OptiClass_Project_Documentation.html
+OptiClass_Database_PostgreSQL.html
+
+# ---- Claude Code memory ----
+.claude/

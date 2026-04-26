@@ -34,5 +34,7 @@ desktop.ini
 OptiClass_Project_Documentation.html
 OptiClass_Database_PostgreSQL.html
 
-# ---- Claude Code memory ----
+# ---- Claude Code ----
 .claude/
+CLAUDE.md
+DATABASE_DESIGN.md

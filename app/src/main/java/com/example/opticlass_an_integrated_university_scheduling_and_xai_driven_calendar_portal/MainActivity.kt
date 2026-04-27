@@ -203,6 +203,45 @@ fun decodeUsername(encoded: String): String =
     try { String(Base64.decode(encoded, Base64.NO_WRAP), Charsets.UTF_8) }
     catch (e: Exception) { encoded }
 
+private val ACADEMIC_TITLES = setOf(
+    "prof.", "dr.", "doç.", "yrd.", "öğr.", "gör.", "arş.",
+    "prof", "dr", "doç", "yrd", "öğr", "gör", "arş"
+)
+
+fun normalizeTurkish(str: String): String =
+    str.replace('ş', 's').replace('Ş', 's')
+       .replace('ç', 'c').replace('Ç', 'c')
+       .replace('ü', 'u').replace('Ü', 'u')
+       .replace('ğ', 'g').replace('Ğ', 'g')
+       .replace('ı', 'i').replace('İ', 'i')
+       .replace('ö', 'o').replace('Ö', 'o')
+
+fun generateUsername(fullName: String): String {
+    val parts = fullName.split(" ")
+        .map { it.lowercase() }
+        .filter { it !in ACADEMIC_TITLES }
+        .map { normalizeTurkish(it) }
+        .map { it.replace(Regex("[^a-z0-9]"), "") }
+        .filter { it.isNotBlank() }
+
+    val base = when {
+        parts.size >= 2 -> "${parts.first()}_${parts.last()}"
+        parts.size == 1 -> parts.first()
+        else -> "user"
+    }
+
+    val allUsernames = globalUsers.map { decodeUsername(it.username) }
+    if (base !in allUsernames) return base
+    var i = 2
+    while ("${base}_$i" in allUsernames) i++
+    return "${base}_$i"
+}
+
+fun generatePassword(): String {
+    val chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
+    return (1..6).map { chars.random() }.joinToString("")
+}
+
 private val avatarPalette = listOf(
     Color(0xFF1976D2), Color(0xFF388E3C), Color(0xFFD32F2F),
     Color(0xFF7B1FA2), Color(0xFFF57C00), Color(0xFF0097A7),
@@ -352,6 +391,7 @@ fun OptiClassApp() {
 @Composable
 fun ForceChangePasswordScreen(encodedUsername: String, onPasswordChanged: () -> Unit) {
     val user = globalUsers.find { it.username == encodedUsername } ?: return
+    var currentPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf("") }
@@ -377,6 +417,15 @@ fun ForceChangePasswordScreen(encodedUsername: String, onPasswordChanged: () -> 
         }
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(
+            value = currentPassword,
+            onValueChange = { currentPassword = it },
+            label = { Text("Current Password") },
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
             value = newPassword,
             onValueChange = { newPassword = it },
             label = { Text("New Password") },
@@ -400,8 +449,10 @@ fun ForceChangePasswordScreen(encodedUsername: String, onPasswordChanged: () -> 
         Button(
             onClick = {
                 when {
-                    newPassword.length < 6 -> errorMsg = "Password must be at least 6 characters"
+                    sha256(currentPassword) != user.password -> errorMsg = "Current password is incorrect"
+                    newPassword.length < 6 -> errorMsg = "New password must be at least 6 characters"
                     newPassword != confirmPassword -> errorMsg = "Passwords do not match"
+                    sha256(newPassword) == user.password -> errorMsg = "New password must be different from current"
                     else -> {
                         val index = globalUsers.indexOfFirst { it.username == encodedUsername }
                         if (index != -1) {
@@ -1248,6 +1299,7 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
     val scope = rememberCoroutineScope()
     var isImporting by remember { mutableStateOf(false) }
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    var newCredentials by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -1331,7 +1383,7 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "Instructor accounts are automatically created using the email prefix as username and 'username123' as password.",
+                        "Instructor accounts are automatically created. Username is derived from the instructor's name; password is a random 6-character code shown once after saving.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp
@@ -1361,9 +1413,13 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
                     Button(
                         onClick = {
                             val listToSave = globalCourseImports.toList()
-                            listToSave.forEach { saveCourseImport(it) }
+                            val created = listToSave.mapNotNull { saveCourseImport(it) }
                             globalCourseImports.clear()
-                            scope.launch { snackbarHostState.showSnackbar("All instructors and courses saved!") }
+                            if (created.isNotEmpty()) {
+                                newCredentials = created
+                            } else {
+                                scope.launch { snackbarHostState.showSnackbar("All instructors and courses saved!") }
+                            }
                         },
                         shape = RoundedCornerShape(8.dp)
                     ) {
@@ -1417,9 +1473,13 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
                                         .clip(CircleShape)
                                         .background(MaterialTheme.colorScheme.primaryContainer)
                                         .clickable {
-                                            saveCourseImport(course)
+                                            val cred = saveCourseImport(course)
                                             globalCourseImports.remove(course)
-                                            scope.launch { snackbarHostState.showSnackbar("Saved ${course.lecturer}") }
+                                            if (cred != null) {
+                                                newCredentials = listOf(cred)
+                                            } else {
+                                                scope.launch { snackbarHostState.showSnackbar("Saved ${course.lecturer}") }
+                                            }
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -1446,12 +1506,17 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
             }
         }
     }
+
+    if (newCredentials.isNotEmpty()) {
+        CredentialsDialog(credentials = newCredentials, onDismiss = { newCredentials = emptyList() })
+    }
 }
 
 // ── Business Logic ────────────────────────────────────────────────────────────
 
-fun saveCourseImport(course: CourseImport) {
-    val plainUsername = course.email.substringBefore("@").lowercase()
+// Returns (plainUsername, plainPassword) when a new user is created, null if user already existed.
+fun saveCourseImport(course: CourseImport): Pair<String, String>? {
+    val plainUsername = generateUsername(course.lecturer)
     val encodedUn = encodeUsername(plainUsername)
     val existingIndex = globalUsers.indexOfFirst { it.username == encodedUn }
 
@@ -1461,18 +1526,22 @@ fun saveCourseImport(course: CourseImport) {
             val updatedCourses = existingUser.courses.toMutableList().also { it.add(course) }
             globalUsers[existingIndex] = existingUser.copy(courses = updatedCourses)
         }
+        return null
     } else {
+        val plainPassword = generatePassword()
         globalUsers.add(
             User(
                 username = encodedUn,
-                password = sha256("${plainUsername}123"),
+                password = sha256(plainPassword),
                 role = UserRole.INSTRUCTOR,
                 fullName = course.lecturer,
                 email = course.email,
+                department = course.department,
                 mustChangePassword = true,
                 courses = mutableListOf(course)
             )
         )
+        return plainUsername to plainPassword
     }
 }
 
@@ -1536,9 +1605,11 @@ private suspend fun importClassroomData(context: Context, uri: Uri): List<Classr
             while (rows.hasNext()) {
                 val row = rows.next()
                 val roomCode = formatter.formatCellValue(row.getCell(0)).trim()
-                val department = formatter.formatCellValue(row.getCell(1)).trim()
+                val capacityStr = formatter.formatCellValue(row.getCell(1)).trim()
+                val department = formatter.formatCellValue(row.getCell(2)).trim()
                 if (roomCode.isNotEmpty() && department.isNotEmpty()) {
-                    list.add(Classroom(id = "room_${System.currentTimeMillis()}_${index++}", roomCode = roomCode, capacity = 0, department = department))
+                    val capacity = capacityStr.toIntOrNull() ?: 0
+                    list.add(Classroom(id = "room_${System.currentTimeMillis()}_${index++}", roomCode = roomCode, capacity = capacity, department = department))
                 }
             }
             workbook.close()
@@ -1561,6 +1632,7 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
     var previewList by remember { mutableStateOf<List<Classroom>>(emptyList()) }
     var selectedDepartment by remember { mutableStateOf<String?>(null) }
     var pendingUri by remember { mutableStateOf<Uri?>(null) }
+    var showAddDialog by remember { mutableStateOf(false) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -1618,7 +1690,14 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            Text("Classrooms", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Classrooms", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                OutlinedButton(onClick = { showAddDialog = true }, shape = RoundedCornerShape(8.dp)) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add Manual")
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
 
             Card(
@@ -1639,12 +1718,12 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
                             .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(4.dp))
                             .padding(4.dp)
                     ) {
-                        listOf("Classroom Name", "Department").forEach {
+                        listOf("Room Code", "Capacity", "Department").forEach {
                             Text(it, modifier = Modifier.weight(1f), fontSize = 10.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                     Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp, start = 4.dp, end = 4.dp)) {
-                        listOf("A101", "Computer Science").forEach {
+                        listOf("A101", "40", "Computer Science").forEach {
                             Text(it, modifier = Modifier.weight(1f), fontSize = 9.sp, textAlign = TextAlign.Center, color = Color.Gray)
                         }
                     }
@@ -1772,9 +1851,64 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
             onClick = { filePickerLauncher.launch("*/*") },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
         ) {
-            Icon(Icons.Default.Add, contentDescription = "Import Classrooms")
+            Icon(Icons.Default.Upload, contentDescription = "Import Classrooms from Excel")
         }
     }
+
+    if (showAddDialog) {
+        AddClassroomDialog(
+            onDismiss = { showAddDialog = false },
+            onAdd = { classroom ->
+                if (globalClassrooms.any { it.roomCode.equals(classroom.roomCode, ignoreCase = true) }) {
+                    scope.launch { snackbarHostState.showSnackbar("Room code '${classroom.roomCode}' already exists.") }
+                } else {
+                    globalClassrooms.add(classroom)
+                    scope.launch { snackbarHostState.showSnackbar("Classroom '${classroom.roomCode}' added.") }
+                }
+                showAddDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+fun AddClassroomDialog(onDismiss: () -> Unit, onAdd: (Classroom) -> Unit) {
+    var roomCode by remember { mutableStateOf("") }
+    var capacity by remember { mutableStateOf("") }
+    var department by remember { mutableStateOf("") }
+    var errorMsg by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Classroom") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = roomCode, onValueChange = { roomCode = it }, label = { Text("Room Code (e.g. A101)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(value = capacity, onValueChange = { capacity = it }, label = { Text("Capacity") }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+                OutlinedTextField(value = department, onValueChange = { department = it }, label = { Text("Department / Building") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                if (errorMsg.isNotEmpty()) {
+                    Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                when {
+                    roomCode.isBlank() -> errorMsg = "Room code is required"
+                    department.isBlank() -> errorMsg = "Department is required"
+                    else -> onAdd(
+                        Classroom(
+                            id = "room_${System.currentTimeMillis()}",
+                            roomCode = roomCode.trim().uppercase(),
+                            capacity = capacity.toIntOrNull() ?: 0,
+                            department = department.trim()
+                        )
+                    )
+                }
+            }) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 // ── My Availability ───────────────────────────────────────────────────────────
@@ -2380,6 +2514,52 @@ fun UserTransactionsPage(currentUserName: String = "") {
     }
 }
 
+// ── Credentials Dialog ────────────────────────────────────────────────────────
+
+@Composable
+fun CredentialsDialog(credentials: List<Pair<String, String>>, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text(if (credentials.size == 1) "Account Created" else "${credentials.size} Accounts Created")
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Share these credentials with the instructors. The password will not be shown again.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                HorizontalDivider()
+                credentials.forEach { (username, password) ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row {
+                                Text("Username: ", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(username, fontSize = 13.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                            }
+                            Row {
+                                Text("Password: ", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(password, fontSize = 13.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        }
+    )
+}
+
 // ── Add / Edit User Dialogs ───────────────────────────────────────────────────
 
 @Composable
@@ -2447,6 +2627,7 @@ fun EditUserDialog(user: User, onDismiss: () -> Unit, onSave: (User) -> Unit) {
     var role by remember { mutableStateOf(user.role) }
     var errorMsg by remember { mutableStateOf("") }
     var showResetConfirm by remember { mutableStateOf(false) }
+    var resetCredential by remember { mutableStateOf<Pair<String, String>?>(null) }
     val isSuperuser = decodeUsername(user.username) == "admin"
 
     AlertDialog(
@@ -2486,27 +2667,33 @@ fun EditUserDialog(user: User, onDismiss: () -> Unit, onSave: (User) -> Unit) {
                     }
 
                     if (showResetConfirm) {
-                        val plainUn = decodeUsername(user.username)
                         AlertDialog(
                             onDismissRequest = { showResetConfirm = false },
                             title = { Text("Reset Password") },
-                            text = { Text("The password for ${user.fullName} will be reset to \"${plainUn}123\". Are you sure?") },
+                            text = { Text("A new random password will be generated for ${user.fullName}. The new password will be shown once. Are you sure?") },
                             confirmButton = {
                                 TextButton(onClick = {
                                     showResetConfirm = false
+                                    val newPass = generatePassword()
+                                    val plainUn = decodeUsername(user.username)
                                     onSave(user.copy(
                                         fullName = fullName.trim(),
                                         email = email.trim(),
                                         role = role,
-                                        password = sha256("${plainUn}123"),
+                                        password = sha256(newPass),
                                         mustChangePassword = true
                                     ))
+                                    resetCredential = plainUn to newPass
                                 }) { Text("Yes, Reset", color = MaterialTheme.colorScheme.error) }
                             },
                             dismissButton = {
                                 TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
                             }
                         )
+                    }
+
+                    resetCredential?.let { cred ->
+                        CredentialsDialog(credentials = listOf(cred), onDismiss = { resetCredential = null; onDismiss() })
                     }
                 }
                 if (errorMsg.isNotEmpty()) {
@@ -2550,6 +2737,10 @@ fun InstructorMainPage(userName: String, onNavigate: (AppDestinations) -> Unit =
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Welcome, ${user.fullName}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        val dept = user.department.ifBlank { user.courses.firstOrNull()?.department.orEmpty() }
+        if (dept.isNotBlank()) {
+            Text(dept, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
 
         // FIX: summary cards are now tappable and navigate to the relevant page
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

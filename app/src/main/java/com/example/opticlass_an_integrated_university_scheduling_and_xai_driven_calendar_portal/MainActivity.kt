@@ -89,7 +89,15 @@ data class CourseImport(
     val lecturer: String,
     val department: String,
     val email: String,
-    val duration: Int = 1  // 1-3 hours; -1 = continuation slot marker
+    val duration: Int = 1,  // 1-3 hours; -1 = continuation slot marker
+    val classroomId: String? = null
+)
+
+data class Classroom(
+    val id: String,
+    val roomCode: String,
+    val capacity: Int,
+    val department: String
 )
 
 data class ScheduleChange(
@@ -110,6 +118,7 @@ data class User(
     val fullName: String,
     val email: String,
     val avatarUri: String? = null,
+    val department: String = "",
     val mustChangePassword: Boolean = false,
     val courses: MutableList<CourseImport> = mutableListOf(),
     val schedule: SnapshotStateMap<String, SnapshotStateMap<String, CourseImport?>> = mutableStateMapOf()
@@ -125,6 +134,7 @@ val globalUsers = mutableStateListOf(
     User(encodeUsername("admin"), sha256("admin123"), UserRole.ADMIN, "System Admin", "admin@opticlass.com"),
     User(encodeUsername("berkay"), sha256("berkay123"), UserRole.INSTRUCTOR, "Berkay", "berkay@example.com", mustChangePassword = true)
 )
+val globalClassrooms = mutableStateListOf<Classroom>()
 val globalAvailabilityDrafts = mutableStateMapOf<String, Map<String, Set<String>>>()
 val globalScheduleHistory = mutableStateListOf<ScheduleChange>()
 
@@ -163,11 +173,11 @@ enum class AppDestinations(
     USER_TRANSACTIONS("User Transactions", Icons.Default.Person, roleRestriction = UserRole.ADMIN),
     UPDATE_CALENDAR("Update Calendar", Icons.Default.Edit, roleRestriction = UserRole.ADMIN),
     INSTRUCTOR_AVAILABILITY("Instructor Availability", Icons.AutoMirrored.Filled.List, roleRestriction = UserRole.ADMIN),
+    CLASSROOMS("Classrooms", Icons.Default.School, roleRestriction = UserRole.ADMIN),
     SETTINGS("Settings", Icons.Default.Settings),
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
 val DAYS = listOf("Mon", "Tue", "Wed", "Thu", "Fri")
 val TIME_SLOTS = listOf("08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM")
 
@@ -590,6 +600,8 @@ fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit) {
                         UserTransactionsPage(userName)
                     currentDestination == AppDestinations.UPDATE_CALENDAR ->
                         UpdateCalendarPage(snackbarHostState, userName)
+                    currentDestination == AppDestinations.CLASSROOMS ->
+                        ClassroomsPage(snackbarHostState)
                     currentDestination == AppDestinations.SETTINGS ->
                         SettingsPage(userName)
                     else -> GenericPage(currentDestination.label)
@@ -664,6 +676,8 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
     var showHistoryDialog by remember { mutableStateOf(false) }
     var showAssignDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
     var selectedDuration by remember { mutableIntStateOf(1) }
+    var selectedClassroom by remember { mutableStateOf<Classroom?>(null) }
+    var classroomDropdownExpanded by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         Row(
@@ -707,6 +721,7 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
                                 selectedUser = user
                                 expanded = false
                                 selectedCourseToAssign = null
+                                selectedClassroom = null
                                 isDirty = false
                             }
                         }
@@ -778,6 +793,12 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
                 val unavailableSlots = validSlots.filter { s ->
                     availableSlots[reqDay]?.contains(s) != true
                 }
+                // Derslik çift rezervasyon kontrolü
+                val classroomConflict = selectedClassroom != null && validSlots.any { s ->
+                    globalUsers.any { u ->
+                        u.schedule[reqDay]?.get(s)?.classroomId == selectedClassroom!!.id
+                    }
+                }
 
                 AlertDialog(
                     onDismissRequest = { showAssignDialog = null },
@@ -796,6 +817,46 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
                                         label = { Text("${d}s") }
                                     )
                                 }
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Classroom (optional):", style = MaterialTheme.typography.labelMedium)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            ExposedDropdownMenuBox(
+                                expanded = classroomDropdownExpanded,
+                                onExpandedChange = { classroomDropdownExpanded = !classroomDropdownExpanded }
+                            ) {
+                                OutlinedTextField(
+                                    value = selectedClassroom?.roomCode ?: "No classroom",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = classroomDropdownExpanded) },
+                                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, true).fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    isError = classroomConflict
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = classroomDropdownExpanded,
+                                    onDismissRequest = { classroomDropdownExpanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("No classroom") },
+                                        onClick = { selectedClassroom = null; classroomDropdownExpanded = false }
+                                    )
+                                    globalClassrooms.forEach { room ->
+                                        DropdownMenuItem(
+                                            text = { Text("${room.roomCode} — ${room.department}") },
+                                            onClick = { selectedClassroom = room; classroomDropdownExpanded = false }
+                                        )
+                                    }
+                                }
+                            }
+                            if (classroomConflict) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "${selectedClassroom!!.roomCode} is already booked at this time.",
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                             }
                             if (outOfBounds) {
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -825,9 +886,12 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
                     },
                     confirmButton = {
                         TextButton(
-                            enabled = !outOfBounds,
+                            enabled = !outOfBounds && !classroomConflict,
                             onClick = {
-                                val course = selectedCourseToAssign!!.copy(duration = selectedDuration)
+                                val course = selectedCourseToAssign!!.copy(
+                                    duration = selectedDuration,
+                                    classroomId = selectedClassroom?.id
+                                )
                                 validSlots.forEachIndexed { index, s ->
                                     draftSchedule[reqDay]?.set(s, if (index == 0) course else course.copy(duration = -1))
                                 }
@@ -1156,7 +1220,15 @@ fun MySchedulePage(userName: String) {
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (!isContinuation && course != null) {
-                                        Text(course.code, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        val roomCode = course.classroomId?.let { id ->
+                                            globalClassrooms.find { it.id == id }?.roomCode
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(course.code, fontSize = 10.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                                            if (roomCode != null) {
+                                                Text(roomCode, fontSize = 8.sp, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f), textAlign = TextAlign.Center)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1446,6 +1518,265 @@ private suspend fun importExcelData(context: Context, uri: Uri): Boolean {
     }
 }
 
+private suspend fun importClassroomData(context: Context, uri: Uri): List<Classroom>? {
+    return withContext(Dispatchers.IO) {
+        try {
+            val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
+            if (inputStream == null) return@withContext null
+
+            val workbook = WorkbookFactory.create(inputStream)
+            val sheet = workbook.getSheetAt(0)
+            val rows = sheet.iterator()
+            val formatter = DataFormatter()
+
+            if (rows.hasNext()) rows.next() // skip header
+
+            val list = mutableListOf<Classroom>()
+            var index = 0
+            while (rows.hasNext()) {
+                val row = rows.next()
+                val roomCode = formatter.formatCellValue(row.getCell(0)).trim()
+                val department = formatter.formatCellValue(row.getCell(1)).trim()
+                if (roomCode.isNotEmpty() && department.isNotEmpty()) {
+                    list.add(Classroom(id = "room_${System.currentTimeMillis()}_${index++}", roomCode = roomCode, capacity = 0, department = department))
+                }
+            }
+            workbook.close()
+            inputStream.close()
+            list
+        } catch (e: Exception) {
+            Log.e("ClassroomImport", "Error: ${e.message}")
+            null
+        }
+    }
+}
+
+// ── Classrooms ────────────────────────────────────────────────────────────────
+
+@Composable
+fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isImporting by remember { mutableStateOf(false) }
+    var previewList by remember { mutableStateOf<List<Classroom>>(emptyList()) }
+    var selectedDepartment by remember { mutableStateOf<String?>(null) }
+    var pendingUri by remember { mutableStateOf<Uri?>(null) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            if (previewList.isNotEmpty()) {
+                pendingUri = uri
+            } else {
+                scope.launch {
+                    isImporting = true
+                    val result = importClassroomData(context, uri)
+                    isImporting = false
+                    if (result != null) {
+                        previewList = result
+                        scope.launch { snackbarHostState.showSnackbar("${result.size} classrooms loaded. Review and save.") }
+                    } else {
+                        scope.launch { snackbarHostState.showSnackbar("Failed to parse Excel file. Check format.") }
+                    }
+                }
+            }
+        }
+    }
+
+    if (pendingUri != null) {
+        AlertDialog(
+            onDismissRequest = { pendingUri = null },
+            title = { Text("Replace Preview?") },
+            text = { Text("You have ${previewList.size} unsaved item(s). Loading a new file will discard them. Continue?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val uri = pendingUri!!
+                    pendingUri = null
+                    scope.launch {
+                        isImporting = true
+                        val result = importClassroomData(context, uri)
+                        isImporting = false
+                        if (result != null) {
+                            previewList = result
+                            scope.launch { snackbarHostState.showSnackbar("${result.size} classrooms loaded. Review and save.") }
+                        } else {
+                            scope.launch { snackbarHostState.showSnackbar("Failed to parse Excel file. Check format.") }
+                        }
+                    }
+                }) { Text("Replace") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingUri = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    val departments = globalClassrooms.map { it.department }.distinct().sorted()
+    val filteredClassrooms = if (selectedDepartment == null) globalClassrooms.toList()
+                             else globalClassrooms.filter { it.department == selectedDepartment }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            Text("Classrooms", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Expected Excel Format", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(4.dp))
+                            .padding(4.dp)
+                    ) {
+                        listOf("Classroom Name", "Department").forEach {
+                            Text(it, modifier = Modifier.weight(1f), fontSize = 10.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp, start = 4.dp, end = 4.dp)) {
+                        listOf("A101", "Computer Science").forEach {
+                            Text(it, modifier = Modifier.weight(1f), fontSize = 9.sp, textAlign = TextAlign.Center, color = Color.Gray)
+                        }
+                    }
+                }
+            }
+
+            if (previewList.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Preview (${previewList.size} items)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { previewList = emptyList() }) { Text("Discard") }
+                                Button(onClick = {
+                                    val toAdd = previewList.filter { new ->
+                                        globalClassrooms.none { it.roomCode == new.roomCode }
+                                    }
+                                    globalClassrooms.addAll(toAdd)
+                                    val skipped = previewList.size - toAdd.size
+                                    previewList = emptyList()
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            if (skipped > 0) "${toAdd.size} saved, $skipped duplicate(s) skipped."
+                                            else "${toAdd.size} classrooms saved."
+                                        )
+                                    }
+                                }) { Text("Save All") }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Column(modifier = Modifier.heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
+                            previewList.forEach { classroom ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(classroom.roomCode, fontWeight = FontWeight.Medium)
+                                    Text(classroom.department, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                                }
+                                HorizontalDivider()
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (departments.isNotEmpty()) {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item {
+                        FilterChip(
+                            selected = selectedDepartment == null,
+                            onClick = { selectedDepartment = null },
+                            label = { Text("All") }
+                        )
+                    }
+                    items(departments) { dept ->
+                        FilterChip(
+                            selected = selectedDepartment == dept,
+                            onClick = { selectedDepartment = if (selectedDepartment == dept) null else dept },
+                            label = { Text(dept) }
+                        )
+                    }
+                }
+            }
+
+            if (globalClassrooms.isEmpty() && previewList.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.School, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.LightGray)
+                        Spacer(Modifier.height(16.dp))
+                        Text("No classrooms yet.\nTap + to import from Excel.", textAlign = TextAlign.Center, color = Color.Gray)
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(filteredClassrooms) { classroom ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.School, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(classroom.roomCode, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                                }
+                                Surface(
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
+                                    Text(classroom.department, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (isImporting) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+        }
+
+        FloatingActionButton(
+            onClick = { filePickerLauncher.launch("*/*") },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "Import Classrooms")
+        }
+    }
+}
+
 // ── My Availability ───────────────────────────────────────────────────────────
 
 @Composable
@@ -1629,10 +1960,64 @@ fun AdminMainPage(adminName: String) {
         .distinct()
         .filter { it != adminName }
 
+    // Summary calculations
+    val unassignedInstructors = globalUsers.filter { user ->
+        user.role == UserRole.INSTRUCTOR &&
+        user.schedule.values.all { day -> day.values.all { it == null } }
+    }
+    val assignedCourseCodes = globalUsers.flatMap { user ->
+        user.schedule.values.flatMap { day -> day.values.filterNotNull().map { it.code } }
+    }.toSet()
+    val unassignedCourses = globalCourseImports.filter { it.code !in assignedCourseCodes }
+    val bookedSlotsPerRoom = globalUsers.flatMap { user ->
+        user.schedule.entries.flatMap { (day, dayMap) ->
+            dayMap.entries.mapNotNull { (slot, course) ->
+                course?.classroomId?.let { Triple(it, day, slot) }
+            }
+        }
+    }.groupBy { it.first }
+    val availableClassrooms = globalClassrooms.filter { room ->
+        (bookedSlotsPerRoom[room.id]?.size ?: 0) < DAYS.size * TIME_SLOTS.size
+    }
+
+    var showUnassignedInstructors by remember { mutableStateOf(false) }
+    var showUnassignedCourses by remember { mutableStateOf(false) }
+    var showAvailableClassrooms by remember { mutableStateOf(false) }
+
     if (selectedUser == null) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                 Text("Inbox", style = MaterialTheme.typography.headlineMedium)
+                Spacer(Modifier.height(12.dp))
+
+                // 3 özet kart
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SummaryCard(
+                        modifier = Modifier.weight(1f),
+                        title = "Unassigned\nInstructors",
+                        value = unassignedInstructors.size.toString(),
+                        icon = Icons.Default.Person,
+                        onClick = { showUnassignedInstructors = true }
+                    )
+                    SummaryCard(
+                        modifier = Modifier.weight(1f),
+                        title = "Unassigned\nCourses",
+                        value = unassignedCourses.size.toString(),
+                        icon = Icons.Default.Menu,
+                        onClick = { showUnassignedCourses = true }
+                    )
+                    SummaryCard(
+                        modifier = Modifier.weight(1f),
+                        title = "Available\nClassrooms",
+                        value = availableClassrooms.size.toString(),
+                        icon = Icons.Default.School,
+                        onClick = { showAvailableClassrooms = true }
+                    )
+                }
+
                 Spacer(Modifier.height(16.dp))
 
                 if (conversationUsers.isEmpty()) {
@@ -1697,6 +2082,65 @@ fun AdminMainPage(adminName: String) {
             ) {
                 Icon(Icons.Default.Add, contentDescription = "New Chat", tint = Color.White)
             }
+        }
+
+        if (showUnassignedInstructors) {
+            AlertDialog(
+                onDismissRequest = { showUnassignedInstructors = false },
+                title = { Text("Unassigned Instructors") },
+                text = {
+                    if (unassignedInstructors.isEmpty()) {
+                        Text("All instructors have at least one course assigned.")
+                    } else {
+                        LazyColumn {
+                            items(unassignedInstructors) { u ->
+                                Text("• ${u.fullName}", modifier = Modifier.padding(vertical = 4.dp))
+                            }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { showUnassignedInstructors = false }) { Text("Close") } }
+            )
+        }
+
+        if (showUnassignedCourses) {
+            AlertDialog(
+                onDismissRequest = { showUnassignedCourses = false },
+                title = { Text("Unassigned Courses") },
+                text = {
+                    if (unassignedCourses.isEmpty()) {
+                        Text("All courses have been assigned to a slot.")
+                    } else {
+                        LazyColumn {
+                            items(unassignedCourses) { c ->
+                                Text("• ${c.code} — ${c.name}", modifier = Modifier.padding(vertical = 4.dp))
+                            }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { showUnassignedCourses = false }) { Text("Close") } }
+            )
+        }
+
+        if (showAvailableClassrooms) {
+            AlertDialog(
+                onDismissRequest = { showAvailableClassrooms = false },
+                title = { Text("Available Classrooms") },
+                text = {
+                    if (availableClassrooms.isEmpty()) {
+                        Text("No classrooms imported yet.")
+                    } else {
+                        LazyColumn {
+                            items(availableClassrooms) { room ->
+                                val booked = bookedSlotsPerRoom[room.id]?.size ?: 0
+                                val total = DAYS.size * TIME_SLOTS.size
+                                Text("• ${room.roomCode} (${total - booked}/$total free)", modifier = Modifier.padding(vertical = 4.dp))
+                            }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { showAvailableClassrooms = false }) { Text("Close") } }
+            )
         }
 
         if (showNewChatDialog) {

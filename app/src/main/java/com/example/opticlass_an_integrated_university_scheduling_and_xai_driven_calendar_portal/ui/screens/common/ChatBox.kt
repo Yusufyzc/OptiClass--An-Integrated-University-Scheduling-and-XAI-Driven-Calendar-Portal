@@ -19,16 +19,16 @@ fun ChatBox(currentUserName: String, targetUserName: String) {
     var text by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(globalMessages.size) {
-        globalMessages.indices.forEach { i ->
-            val m = globalMessages[i]
+    LaunchedEffect(AppRepository.messages.size) {
+        AppRepository.messages.indices.forEach { i ->
+            val m = AppRepository.messages[i]
             if (m.sender == targetUserName && m.recipient == currentUserName && !m.isRead) {
-                globalMessages[i] = m.copy(isRead = true)
+                AppRepository.messages[i] = m.copy(isRead = true)
             }
         }
     }
 
-    val chatMessages = globalMessages.filter {
+    val chatMessages = AppRepository.messages.filter {
         (it.sender == currentUserName && it.recipient == targetUserName) ||
         (it.sender == targetUserName && it.recipient == currentUserName)
     }
@@ -83,7 +83,7 @@ fun ChatBox(currentUserName: String, targetUserName: String) {
             )
             IconButton(onClick = {
                 if (text.isNotBlank()) {
-                    globalMessages.add(Message(currentUserName, targetUserName, text))
+                    AppRepository.messages.add(Message(currentUserName, targetUserName, text))
                     text = ""
                 }
             }) {

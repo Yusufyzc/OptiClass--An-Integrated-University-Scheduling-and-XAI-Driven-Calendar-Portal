@@ -14,29 +14,21 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 @Composable
-fun OptiClassApp() {
-    var isLoggedIn by remember { mutableStateOf(false) }
-    var userRole by remember { mutableStateOf(UserRole.INSTRUCTOR) }
-    var currentUserName by remember { mutableStateOf("") }
-
-    if (!isLoggedIn) {
-        LoginScreen { role, name ->
-            userRole = role
-            currentUserName = name
-            isLoggedIn = true
-        }
+fun OptiClassApp(viewModel: AppViewModel) {
+    if (!viewModel.isLoggedIn) {
+        LoginScreen { username, password -> viewModel.login(username, password) }
     } else {
-        val currentUser = globalUsers.find { it.username == currentUserName }
+        val currentUser = AppRepository.users.find { it.username == viewModel.currentUserName }
         if (currentUser?.mustChangePassword == true) {
             ForceChangePasswordScreen(
-                encodedUsername = currentUserName,
-                onPasswordChanged = { /* state recompose will pick up mustChangePassword = false */ }
+                encodedUsername = viewModel.currentUserName,
+                onPasswordChanged = { }
             )
         } else {
             MainScaffold(
-                role = userRole,
-                userName = currentUserName,
-                onLogout = { isLoggedIn = false }
+                role = viewModel.userRole,
+                userName = viewModel.currentUserName,
+                onLogout = { viewModel.logout() }
             )
         }
     }
@@ -52,13 +44,13 @@ fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit) {
     var showNotificationMenu by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
 
-    val unreadMsgCount = globalMessages.count { it.recipient == userName && !it.isRead }
-    val unreadNotifCount = globalNotifications.count { !it.isRead && it.recipientName == userName }
+    val unreadMsgCount = AppRepository.messages.count { it.recipient == userName && !it.isRead }
+    val unreadNotifCount = AppRepository.notifications.count { !it.isRead && it.recipientName == userName }
 
-    var lastMessageCount by remember { mutableIntStateOf(globalMessages.size) }
-    LaunchedEffect(globalMessages.size) {
-        if (globalMessages.size > lastMessageCount) {
-            val lastMsg = globalMessages.last()
+    var lastMessageCount by remember { mutableIntStateOf(AppRepository.messages.size) }
+    LaunchedEffect(AppRepository.messages.size) {
+        if (AppRepository.messages.size > lastMessageCount) {
+            val lastMsg = AppRepository.messages.last()
             if (lastMsg.recipient == userName) {
                 scope.launch {
                     val result = snackbarHostState.showSnackbar(
@@ -72,7 +64,7 @@ fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit) {
                 }
             }
         }
-        lastMessageCount = globalMessages.size
+        lastMessageCount = AppRepository.messages.size
     }
 
     if (showLogoutDialog) {
@@ -161,7 +153,7 @@ fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit) {
                                     onDismissRequest = { showNotificationMenu = false },
                                     modifier = Modifier.width(280.dp)
                                 ) {
-                                    val myNotifications = globalNotifications.filter { it.recipientName == userName }
+                                    val myNotifications = AppRepository.notifications.filter { it.recipientName == userName }
                                     if (myNotifications.isEmpty()) {
                                         DropdownMenuItem(
                                             text = { Text("No notifications") },
@@ -178,8 +170,8 @@ fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit) {
                                                 },
                                                 onClick = {
                                                     showNotificationMenu = false
-                                                    val idx = globalNotifications.indexOfFirst { it.id == notif.id }
-                                                    if (idx != -1) globalNotifications[idx] = notif.copy(isRead = true)
+                                                    val idx = AppRepository.notifications.indexOfFirst { it.id == notif.id }
+                                                    if (idx != -1) AppRepository.notifications[idx] = notif.copy(isRead = true)
                                                 }
                                             )
                                         }

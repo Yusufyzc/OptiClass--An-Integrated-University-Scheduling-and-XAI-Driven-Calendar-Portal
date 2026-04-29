@@ -17,10 +17,10 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun InstructorMainPage(userName: String, onNavigate: (AppDestinations) -> Unit = {}, onShowNotifications: () -> Unit = {}) {
-    val user = globalUsers.find { it.username == userName } ?: return
-    val unreadMessages = globalMessages.count { it.recipient == userName && !it.isRead }
-    val unreadNotifs = globalNotifications.count { !it.isRead && it.recipientName == userName }
-    val availabilitySubmitted = globalAvailabilities.any { it.instructorName == userName }
+    val user = AppRepository.users.find { it.username == userName } ?: return
+    val unreadMessages = AppRepository.messages.count { it.recipient == userName && !it.isRead }
+    val unreadNotifs = AppRepository.notifications.count { !it.isRead && it.recipientName == userName }
+    val availabilitySubmitted = AppRepository.availabilities.any { it.instructorName == userName }
 
     val dayMap = mapOf(2 to "Mon", 3 to "Tue", 4 to "Wed", 5 to "Thu", 6 to "Fri")
     val todayKey = dayMap[java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_WEEK)]
@@ -114,7 +114,7 @@ fun InstructorMainPage(userName: String, onNavigate: (AppDestinations) -> Unit =
                                 Text(course.name, fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
                             }
                             val roomCode = course.classroomId?.let { id ->
-                                globalClassrooms.find { it.id == id }?.roomCode
+                                AppRepository.classrooms.find { it.id == id }?.roomCode
                             }
                             if (roomCode != null) {
                                 Surface(

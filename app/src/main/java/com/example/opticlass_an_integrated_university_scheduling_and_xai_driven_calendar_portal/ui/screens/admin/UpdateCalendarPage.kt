@@ -33,7 +33,7 @@ import java.util.Locale
 fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: String) {
     var expanded by remember { mutableStateOf(false) }
     var selectedUser by remember { mutableStateOf<User?>(null) }
-    val instructors = globalUsers.filter { it.role == UserRole.INSTRUCTOR }
+    val instructors = AppRepository.users.filter { it.role == UserRole.INSTRUCTOR }
     val scope = rememberCoroutineScope()
     var isDirty by remember { mutableStateOf(false) }
     var pendingUserSelect by remember { mutableStateOf<User?>(null) }
@@ -81,7 +81,7 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
                         text = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(user.fullName, modifier = Modifier.weight(1f))
-                                val hasAvailability = globalAvailabilities.any { it.instructorName == user.username }
+                                val hasAvailability = AppRepository.availabilities.any { it.instructorName == user.username }
                                 Surface(
                                     color = if (hasAvailability) Color.Green.copy(alpha = 0.15f) else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
                                     shape = RoundedCornerShape(4.dp)
@@ -117,7 +117,7 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
         if (selectedUser != null) {
             val user = selectedUser!!
 
-            val availability = globalAvailabilities.find { it.instructorName == user.username }
+            val availability = AppRepository.availabilities.find { it.instructorName == user.username }
             val availableSlots = availability?.slots ?: emptyMap()
 
             val draftSchedule = remember(user.username) {
@@ -175,7 +175,7 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
                     availableSlots[reqDay]?.contains(s) != true
                 }
                 val classroomConflict = selectedClassroom != null && validSlots.any { s ->
-                    globalUsers.any { u ->
+                    AppRepository.users.any { u ->
                         u.schedule[reqDay]?.get(s)?.classroomId == selectedClassroom!!.id
                     }
                 }
@@ -222,7 +222,7 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
                                         text = { Text("No classroom") },
                                         onClick = { selectedClassroom = null; classroomDropdownExpanded = false }
                                     )
-                                    globalClassrooms.forEach { room ->
+                                    AppRepository.classrooms.forEach { room ->
                                         DropdownMenuItem(
                                             text = { Text("${room.roomCode} — ${room.department}") },
                                             onClick = { selectedClassroom = room; classroomDropdownExpanded = false }
@@ -312,7 +312,7 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
                                 val prev = user.schedule[day]?.get(slot)
                                 val next = draftSchedule[day]?.get(slot)
                                 if (prev?.code != next?.code) {
-                                    globalScheduleHistory.add(
+                                    AppRepository.scheduleHistory.add(
                                         0,
                                         ScheduleChange(
                                             changedBy = currentAdminUser,
@@ -336,7 +336,7 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
                         }
                         isDirty = false
                         selectedCourseToAssign = null
-                        globalNotifications.add(
+                        AppRepository.notifications.add(
                             AppNotification(
                                 id = System.currentTimeMillis().toString(),
                                 text = "Admin updated your weekly schedule. Please check 'My Schedule'.",
@@ -377,7 +377,7 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
             onDismissRequest = { showHistoryDialog = false },
             title = { Text("Schedule History") },
             text = {
-                if (globalScheduleHistory.isEmpty()) {
+                if (AppRepository.scheduleHistory.isEmpty()) {
                     Text("No changes recorded yet.")
                 } else {
                     Column(
@@ -385,7 +385,7 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
                             .verticalScroll(rememberScrollState())
                             .heightIn(max = 400.dp)
                     ) {
-                        globalScheduleHistory.forEach { change ->
+                        AppRepository.scheduleHistory.forEach { change ->
                             Card(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -421,9 +421,9 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
                 TextButton(onClick = { showHistoryDialog = false }) { Text("Close") }
             },
             dismissButton = {
-                if (globalScheduleHistory.isNotEmpty()) {
+                if (AppRepository.scheduleHistory.isNotEmpty()) {
                     TextButton(
-                        onClick = { globalScheduleHistory.clear(); showHistoryDialog = false },
+                        onClick = { AppRepository.scheduleHistory.clear(); showHistoryDialog = false },
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) { Text("Clear History") }
                 }

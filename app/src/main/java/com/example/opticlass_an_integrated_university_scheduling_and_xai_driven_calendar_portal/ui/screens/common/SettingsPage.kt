@@ -22,15 +22,15 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun SettingsPage(userName: String) {
-    val user = globalUsers.find { it.username == userName }
+    val user = AppRepository.users.find { it.username == userName }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            val index = globalUsers.indexOfFirst { it.username == userName }
-            if (index != -1) globalUsers[index] = globalUsers[index].copy(avatarUri = uri.toString())
+            val index = AppRepository.users.indexOfFirst { it.username == userName }
+            if (index != -1) AppRepository.users[index] = AppRepository.users[index].copy(avatarUri = uri.toString())
         }
     }
 
@@ -129,8 +129,8 @@ fun SettingsPage(userName: String) {
             user = user,
             onDismiss = { showChangePasswordDialog = false },
             onSave = { hashedPassword ->
-                val index = globalUsers.indexOfFirst { it.username == userName }
-                if (index != -1) globalUsers[index] = globalUsers[index].copy(
+                val index = AppRepository.users.indexOfFirst { it.username == userName }
+                if (index != -1) AppRepository.users[index] = AppRepository.users[index].copy(
                     password = hashedPassword,
                     mustChangePassword = false
                 )

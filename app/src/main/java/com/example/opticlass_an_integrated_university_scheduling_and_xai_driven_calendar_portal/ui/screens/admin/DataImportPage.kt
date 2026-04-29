@@ -45,7 +45,7 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            if (globalCourseImports.isNotEmpty()) {
+            if (AppRepository.courseImports.isNotEmpty()) {
                 pendingImportUri = uri
             } else {
                 scope.launch {
@@ -66,7 +66,7 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
         AlertDialog(
             onDismissRequest = { pendingImportUri = null },
             title = { Text("Replace Current Preview?") },
-            text = { Text("You have ${globalCourseImports.size} unsaved item(s) in the preview. Loading a new file will discard them. Continue?") },
+            text = { Text("You have ${AppRepository.courseImports.size} unsaved item(s) in the preview. Loading a new file will discard them. Continue?") },
             confirmButton = {
                 TextButton(onClick = {
                     val uri = pendingImportUri!!
@@ -131,7 +131,7 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
                 }
             }
 
-            if (globalCourseImports.isEmpty()) {
+            if (AppRepository.courseImports.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.LightGray)
@@ -149,12 +149,12 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Preview (${globalCourseImports.size} items)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Text("Preview (${AppRepository.courseImports.size} items)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                     Button(
                         onClick = {
-                            val listToSave = globalCourseImports.toList()
+                            val listToSave = AppRepository.courseImports.toList()
                             val created = listToSave.mapNotNull { saveCourseImport(it) }
-                            globalCourseImports.clear()
+                            AppRepository.courseImports.clear()
                             if (created.isNotEmpty()) {
                                 newCredentials = created
                             } else {
@@ -170,7 +170,7 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
                 }
 
                 LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(globalCourseImports) { course ->
+                    items(AppRepository.courseImports) { course ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -204,7 +204,7 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
                                         Text(course.email, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
                                     }
                                 }
-                                IconButton(onClick = { globalCourseImports.remove(course) }) {
+                                IconButton(onClick = { AppRepository.courseImports.remove(course) }) {
                                     Icon(Icons.Default.Clear, contentDescription = "Discard", tint = MaterialTheme.colorScheme.error)
                                 }
                                 Box(
@@ -214,7 +214,7 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
                                         .background(MaterialTheme.colorScheme.primaryContainer)
                                         .clickable {
                                             val cred = saveCourseImport(course)
-                                            globalCourseImports.remove(course)
+                                            AppRepository.courseImports.remove(course)
                                             if (cred != null) {
                                                 newCredentials = listOf(cred)
                                             } else {
@@ -255,18 +255,18 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
 fun saveCourseImport(course: CourseImport): Pair<String, String>? {
     val plainUsername = course.email.substringBefore("@").ifBlank { generateUsername(course.lecturer) }
     val encodedUn = encodeUsername(plainUsername)
-    val existingIndex = globalUsers.indexOfFirst { it.username == encodedUn }
+    val existingIndex = AppRepository.users.indexOfFirst { it.username == encodedUn }
 
     if (existingIndex != -1) {
-        val existingUser = globalUsers[existingIndex]
+        val existingUser = AppRepository.users[existingIndex]
         if (existingUser.courses.none { it.code == course.code }) {
             val updatedCourses = existingUser.courses.toMutableList().also { it.add(course) }
-            globalUsers[existingIndex] = existingUser.copy(courses = updatedCourses)
+            AppRepository.users[existingIndex] = existingUser.copy(courses = updatedCourses)
         }
         return null
     } else {
         val plainPassword = generatePassword()
-        globalUsers.add(
+        AppRepository.users.add(
             User(
                 username = encodedUn,
                 password = sha256(plainPassword),
@@ -310,8 +310,8 @@ private suspend fun importExcelData(context: Context, uri: Uri): Boolean {
             }
 
             withContext(Dispatchers.Main) {
-                globalCourseImports.clear()
-                globalCourseImports.addAll(importedList)
+                AppRepository.courseImports.clear()
+                AppRepository.courseImports.addAll(importedList)
             }
 
             workbook.close()

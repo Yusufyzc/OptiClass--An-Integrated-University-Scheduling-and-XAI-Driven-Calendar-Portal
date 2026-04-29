@@ -38,11 +38,11 @@ fun UserTransactionsPage(currentUserName: String = "") {
             }
         }
         Spacer(Modifier.height(8.dp))
-        Text("All Users (${globalUsers.size})", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+        Text("All Users (${AppRepository.users.size})", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
         Spacer(Modifier.height(12.dp))
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(globalUsers) { user ->
+            items(AppRepository.users) { user ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -77,7 +77,7 @@ fun UserTransactionsPage(currentUserName: String = "") {
         AddUserDialog(
             onDismiss = { showAddDialog = false },
             onAdd = { newUser ->
-                globalUsers.add(newUser)
+                AppRepository.users.add(newUser)
                 showAddDialog = false
             }
         )
@@ -91,11 +91,11 @@ fun UserTransactionsPage(currentUserName: String = "") {
             confirmButton = {
                 TextButton(onClick = {
                     val target = userToDelete!!.username
-                    globalUsers.removeAll { it.username == target }
-                    globalMessages.removeAll { it.sender == target || it.recipient == target }
-                    globalAvailabilities.removeAll { it.instructorName == target }
-                    globalAvailabilityDrafts.remove(target)
-                    globalNotifications.removeAll { it.recipientName == target }
+                    AppRepository.users.removeAll { it.username == target }
+                    AppRepository.messages.removeAll { it.sender == target || it.recipient == target }
+                    AppRepository.availabilities.removeAll { it.instructorName == target }
+                    AppRepository.availabilityDrafts.remove(target)
+                    AppRepository.notifications.removeAll { it.recipientName == target }
                     userToDelete = null
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },
@@ -110,8 +110,8 @@ fun UserTransactionsPage(currentUserName: String = "") {
             user = userToEdit!!,
             onDismiss = { userToEdit = null },
             onSave = { updated ->
-                val index = globalUsers.indexOfFirst { it.username == updated.username }
-                if (index != -1) globalUsers[index] = updated
+                val index = AppRepository.users.indexOfFirst { it.username == updated.username }
+                if (index != -1) AppRepository.users[index] = updated
                 userToEdit = null
             }
         )
@@ -201,7 +201,7 @@ fun AddUserDialog(onDismiss: () -> Unit, onAdd: (User) -> Unit) {
                 val trimmedUsername = username.trim()
                 when {
                     trimmedUsername.isBlank() -> errorMsg = "Username is required"
-                    globalUsers.any { decodeUsername(it.username).equals(trimmedUsername, ignoreCase = true) } -> errorMsg = "Username already exists"
+                    AppRepository.users.any { decodeUsername(it.username).equals(trimmedUsername, ignoreCase = true) } -> errorMsg = "Username already exists"
                     fullName.isBlank() -> errorMsg = "Full name is required"
                     email.isNotBlank() && !isValidEmail(email) -> errorMsg = "Enter a valid email address"
                     password.length < 6 -> errorMsg = "Password must be at least 6 characters"

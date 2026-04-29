@@ -53,6 +53,10 @@ dependencies {
     implementation(libs.poi)
     implementation(libs.poi.ooxml)
 
+    // MVVM + Session
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.security.crypto)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

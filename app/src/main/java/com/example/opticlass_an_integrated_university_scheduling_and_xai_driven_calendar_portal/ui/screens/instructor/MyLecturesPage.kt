@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun MyLecturesPage(userName: String) {
-    val user = globalUsers.find { it.username == userName }
+    val user = AppRepository.users.find { it.username == userName }
     val lectures = user?.courses ?: emptyList()
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {

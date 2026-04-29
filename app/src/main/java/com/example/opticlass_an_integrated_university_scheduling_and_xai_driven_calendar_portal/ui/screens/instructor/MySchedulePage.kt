@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun MySchedulePage(userName: String) {
-    val user = globalUsers.find { it.username == userName } ?: return
+    val user = AppRepository.users.find { it.username == userName } ?: return
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("My Weekly Schedule", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -65,7 +65,7 @@ fun MySchedulePage(userName: String) {
                                 ) {
                                     if (!isContinuation && course != null) {
                                         val roomCode = course.classroomId?.let { id ->
-                                            globalClassrooms.find { it.id == id }?.roomCode
+                                            AppRepository.classrooms.find { it.id == id }?.roomCode
                                         }
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                             Text(course.code, fontSize = 10.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)

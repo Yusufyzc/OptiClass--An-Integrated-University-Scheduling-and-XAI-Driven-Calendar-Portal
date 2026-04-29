@@ -18,12 +18,12 @@ fun InstructorAvailabilityAdminPage() {
         if (selectedInstructor == null) {
             Text("Instructor Availabilities", style = MaterialTheme.typography.headlineMedium)
             Spacer(modifier = Modifier.height(16.dp))
-            if (globalAvailabilities.isEmpty()) {
+            if (AppRepository.availabilities.isEmpty()) {
                 Text("No submissions yet.")
             } else {
                 LazyColumn {
-                    items(globalAvailabilities) { availability ->
-                        val instructor = globalUsers.find { it.username == availability.instructorName }
+                    items(AppRepository.availabilities) { availability ->
+                        val instructor = AppRepository.users.find { it.username == availability.instructorName }
                         val displayName = instructor?.fullName ?: availability.instructorName
                         Card(
                             modifier = Modifier
@@ -45,9 +45,9 @@ fun InstructorAvailabilityAdminPage() {
                 }
             }
         } else {
-            val availability = globalAvailabilities.find { it.instructorName == selectedInstructor }
+            val availability = AppRepository.availabilities.find { it.instructorName == selectedInstructor }
             if (availability != null) {
-                val instructor = globalUsers.find { it.username == availability.instructorName }
+                val instructor = AppRepository.users.find { it.username == availability.instructorName }
                 TextButton(onClick = { selectedInstructor = null }) { Text("< Back to list") }
                 Text(
                     "Availability for ${instructor?.fullName ?: availability.instructorName}",

@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
 fun MyAvailabilityPage(instructorName: String, snackbarHostState: SnackbarHostState) {
     val scope = rememberCoroutineScope()
 
-    val initialDraft = globalAvailabilityDrafts[instructorName] ?: emptyMap()
+    val initialDraft = AppRepository.availabilityDrafts[instructorName] ?: emptyMap()
     val selectedSlots = remember {
         val map = mutableStateMapOf<String, MutableSet<String>>()
         DAYS.forEach { day -> map[day] = initialDraft[day]?.toMutableSet() ?: mutableSetOf() }
@@ -43,16 +43,16 @@ fun MyAvailabilityPage(instructorName: String, snackbarHostState: SnackbarHostSt
         Spacer(modifier = Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             Button(onClick = {
-                globalAvailabilityDrafts[instructorName] = selectedSlots.mapValues { it.value.toSet() }
+                AppRepository.availabilityDrafts[instructorName] = selectedSlots.mapValues { it.value.toSet() }
                 scope.launch { snackbarHostState.showSnackbar("Draft saved.") }
             }) { Text("Save Changes") }
             Button(onClick = {
                 val availability = Availability(instructorName, selectedSlots.mapValues { it.value.toSet() })
-                globalAvailabilities.removeAll { it.instructorName == instructorName }
-                globalAvailabilities.add(availability)
-                globalAvailabilityDrafts[instructorName] = availability.slots
-                val adminUsername = globalUsers.find { it.role == UserRole.ADMIN }?.username ?: encodeUsername("admin")
-                globalMessages.add(
+                AppRepository.availabilities.removeAll { it.instructorName == instructorName }
+                AppRepository.availabilities.add(availability)
+                AppRepository.availabilityDrafts[instructorName] = availability.slots
+                val adminUsername = AppRepository.users.find { it.role == UserRole.ADMIN }?.username ?: encodeUsername("admin")
+                AppRepository.messages.add(
                     Message(
                         sender = instructorName,
                         recipient = adminUsername,

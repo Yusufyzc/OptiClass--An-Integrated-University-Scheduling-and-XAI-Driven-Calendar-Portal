@@ -11,7 +11,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun LoginScreen(onLoginSuccess: (UserRole, String) -> Unit) {
+fun LoginScreen(onLoginResult: (String, String) -> Boolean) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
@@ -43,13 +43,7 @@ fun LoginScreen(onLoginSuccess: (UserRole, String) -> Unit) {
         Spacer(modifier = Modifier.height(24.dp))
         Button(
             onClick = {
-                val user = globalUsers.find {
-                    decodeUsername(it.username).equals(username.trim(), ignoreCase = true) &&
-                    it.password == sha256(password)
-                }
-                if (user != null) {
-                    onLoginSuccess(user.role, user.username)
-                } else {
+                if (!onLoginResult(username, password)) {
                     errorMessage = "Invalid username or password"
                 }
             },
@@ -62,7 +56,7 @@ fun LoginScreen(onLoginSuccess: (UserRole, String) -> Unit) {
 
 @Composable
 fun ForceChangePasswordScreen(encodedUsername: String, onPasswordChanged: () -> Unit) {
-    val user = globalUsers.find { it.username == encodedUsername } ?: return
+    val user = AppRepository.users.find { it.username == encodedUsername } ?: return
     var currentPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -126,9 +120,9 @@ fun ForceChangePasswordScreen(encodedUsername: String, onPasswordChanged: () -> 
                     newPassword != confirmPassword -> errorMsg = "Passwords do not match"
                     sha256(newPassword) == user.password -> errorMsg = "New password must be different from current"
                     else -> {
-                        val index = globalUsers.indexOfFirst { it.username == encodedUsername }
+                        val index = AppRepository.users.indexOfFirst { it.username == encodedUsername }
                         if (index != -1) {
-                            globalUsers[index] = globalUsers[index].copy(
+                            AppRepository.users[index] = AppRepository.users[index].copy(
                                 password = sha256(newPassword),
                                 mustChangePassword = false
                             )

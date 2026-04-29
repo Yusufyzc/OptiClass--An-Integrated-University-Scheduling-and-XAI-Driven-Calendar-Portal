@@ -22,29 +22,29 @@ fun AdminMainPage(adminName: String) {
     var selectedUser by remember { mutableStateOf<String?>(null) }
     var showNewChatDialog by remember { mutableStateOf(false) }
 
-    val conversationUsers = globalMessages
+    val conversationUsers = AppRepository.messages
         .filter { it.recipient == adminName || it.sender == adminName }
         .map { if (it.sender == adminName) it.recipient else it.sender }
         .distinct()
         .filter { it != adminName }
 
-    val unassignedInstructors = globalUsers.filter { user ->
+    val unassignedInstructors = AppRepository.users.filter { user ->
         user.role == UserRole.INSTRUCTOR &&
         user.schedule.values.all { day -> day.values.all { it == null } }
     }
-    val assignedCourseCodes = globalUsers.flatMap { user ->
+    val assignedCourseCodes = AppRepository.users.flatMap { user ->
         user.schedule.values.flatMap { day -> day.values.filterNotNull().map { it.code } }
     }.toSet()
-    val allInstructorCourses = globalUsers.filter { it.role == UserRole.INSTRUCTOR }.flatMap { it.courses }
+    val allInstructorCourses = AppRepository.users.filter { it.role == UserRole.INSTRUCTOR }.flatMap { it.courses }
     val unassignedCourses = allInstructorCourses.filter { it.code !in assignedCourseCodes }
-    val bookedSlotsPerRoom = globalUsers.flatMap { user ->
+    val bookedSlotsPerRoom = AppRepository.users.flatMap { user ->
         user.schedule.entries.flatMap { (day, dayMap) ->
             dayMap.entries.mapNotNull { (slot, course) ->
                 course?.classroomId?.let { Triple(it, day, slot) }
             }
         }
     }.groupBy { it.first }
-    val availableClassrooms = globalClassrooms.filter { room ->
+    val availableClassrooms = AppRepository.classrooms.filter { room ->
         (bookedSlotsPerRoom[room.id]?.size ?: 0) < DAYS.size * TIME_SLOTS.size
     }
 
@@ -94,9 +94,9 @@ fun AdminMainPage(adminName: String) {
                 } else {
                     LazyColumn {
                         items(conversationUsers) { user ->
-                            val unread = globalMessages.count { it.sender == user && it.recipient == adminName && !it.isRead }
-                            val instructor = globalUsers.find { it.username == user }
-                            val lastMsg = globalMessages
+                            val unread = AppRepository.messages.count { it.sender == user && it.recipient == adminName && !it.isRead }
+                            val instructor = AppRepository.users.find { it.username == user }
+                            val lastMsg = AppRepository.messages
                                 .filter {
                                     (it.sender == user && it.recipient == adminName) ||
                                     (it.sender == adminName && it.recipient == user)
@@ -210,7 +210,7 @@ fun AdminMainPage(adminName: String) {
         }
 
         if (showNewChatDialog) {
-            val instructors = globalUsers.filter { it.role == UserRole.INSTRUCTOR && it.username !in conversationUsers }
+            val instructors = AppRepository.users.filter { it.role == UserRole.INSTRUCTOR && it.username !in conversationUsers }
             AlertDialog(
                 onDismissRequest = { showNewChatDialog = false },
                 title = { Text("New Conversation") },

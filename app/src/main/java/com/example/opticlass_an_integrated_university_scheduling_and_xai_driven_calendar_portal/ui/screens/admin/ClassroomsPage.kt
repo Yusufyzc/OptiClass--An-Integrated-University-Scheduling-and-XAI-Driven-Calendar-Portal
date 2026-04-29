@@ -93,9 +93,9 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
         )
     }
 
-    val departments = globalClassrooms.map { it.department }.distinct().sorted()
-    val filteredClassrooms = if (selectedDepartment == null) globalClassrooms.toList()
-                             else globalClassrooms.filter { it.department == selectedDepartment }
+    val departments = AppRepository.classrooms.map { it.department }.distinct().sorted()
+    val filteredClassrooms = if (selectedDepartment == null) AppRepository.classrooms.toList()
+                             else AppRepository.classrooms.filter { it.department == selectedDepartment }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -157,9 +157,9 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
                                 OutlinedButton(onClick = { previewList = emptyList() }) { Text("Discard") }
                                 Button(onClick = {
                                     val toAdd = previewList.filter { new ->
-                                        globalClassrooms.none { it.roomCode == new.roomCode }
+                                        AppRepository.classrooms.none { it.roomCode == new.roomCode }
                                     }
-                                    globalClassrooms.addAll(toAdd)
+                                    AppRepository.classrooms.addAll(toAdd)
                                     val skipped = previewList.size - toAdd.size
                                     previewList = emptyList()
                                     scope.launch {
@@ -210,7 +210,7 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
                 }
             }
 
-            if (globalClassrooms.isEmpty() && previewList.isEmpty()) {
+            if (AppRepository.classrooms.isEmpty() && previewList.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.School, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.LightGray)
@@ -250,7 +250,7 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
                                 ) {
                                     Text(classroom.department, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium)
                                 }
-                                IconButton(onClick = { globalClassrooms.remove(classroom) }) {
+                                IconButton(onClick = { AppRepository.classrooms.remove(classroom) }) {
                                     Icon(Icons.Default.Clear, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                                 }
                             }
@@ -276,10 +276,10 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
         AddClassroomDialog(
             onDismiss = { showAddDialog = false },
             onAdd = { classroom ->
-                if (globalClassrooms.any { it.roomCode.equals(classroom.roomCode, ignoreCase = true) }) {
+                if (AppRepository.classrooms.any { it.roomCode.equals(classroom.roomCode, ignoreCase = true) }) {
                     scope.launch { snackbarHostState.showSnackbar("Room code '${classroom.roomCode}' already exists.") }
                 } else {
-                    globalClassrooms.add(classroom)
+                    AppRepository.classrooms.add(classroom)
                     scope.launch { snackbarHostState.showSnackbar("Classroom '${classroom.roomCode}' added.") }
                 }
                 showAddDialog = false

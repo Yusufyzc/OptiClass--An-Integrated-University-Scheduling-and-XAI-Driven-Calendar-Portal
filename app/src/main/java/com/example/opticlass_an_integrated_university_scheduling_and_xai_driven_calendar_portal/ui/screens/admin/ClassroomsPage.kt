@@ -305,12 +305,14 @@ private suspend fun importClassroomData(context: Context, uri: Uri): List<Classr
 
             if (!rows.hasNext()) return@withContext null
             val headerRow = rows.next()
+            val nonEmptyCols = (0 until headerRow.lastCellNum).count {
+                formatter.formatCellValue(headerRow.getCell(it)).trim().isNotEmpty()
+            }
             val h0 = formatter.formatCellValue(headerRow.getCell(0)).trim().lowercase()
             val h1 = formatter.formatCellValue(headerRow.getCell(1)).trim().lowercase()
-            val h2 = formatter.formatCellValue(headerRow.getCell(2)).trim()
-            val validHeader = (h0 == "classroom code" || h0 == "room code") &&
-                              h1 == "capacity" &&
-                              h2.isEmpty()
+            val validHeader = nonEmptyCols == 2 &&
+                              (h0 == "classroom code" || h0 == "room code") &&
+                              h1 == "capacity"
             if (!validHeader) return@withContext null
 
             val list = mutableListOf<Classroom>()

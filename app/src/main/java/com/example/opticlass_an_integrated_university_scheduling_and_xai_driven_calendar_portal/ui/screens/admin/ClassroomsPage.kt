@@ -56,7 +56,7 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
                         previewList = result
                         scope.launch { snackbarHostState.showSnackbar("${result.size} classrooms loaded. Review and save.") }
                     } else {
-                        scope.launch { snackbarHostState.showSnackbar("Failed to parse Excel file. Check format.") }
+                        scope.launch { snackbarHostState.showSnackbar("Wrong file format. Expected: Classroom Code | Capacity") }
                     }
                 }
             }
@@ -80,7 +80,7 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
                             previewList = result
                             scope.launch { snackbarHostState.showSnackbar("${result.size} classrooms loaded. Review and save.") }
                         } else {
-                            scope.launch { snackbarHostState.showSnackbar("Failed to parse Excel file. Check format.") }
+                            scope.launch { snackbarHostState.showSnackbar("Wrong file format. Expected: Classroom Code | Capacity") }
                         }
                     }
                 }) { Text("Replace") }
@@ -303,7 +303,15 @@ private suspend fun importClassroomData(context: Context, uri: Uri): List<Classr
             val rows = sheet.iterator()
             val formatter = DataFormatter()
 
-            if (rows.hasNext()) rows.next()
+            if (!rows.hasNext()) return@withContext null
+            val headerRow = rows.next()
+            val h0 = formatter.formatCellValue(headerRow.getCell(0)).trim().lowercase()
+            val h1 = formatter.formatCellValue(headerRow.getCell(1)).trim().lowercase()
+            val h2 = formatter.formatCellValue(headerRow.getCell(2)).trim()
+            val validHeader = (h0 == "classroom code" || h0 == "room code") &&
+                              h1 == "capacity" &&
+                              h2.isEmpty()
+            if (!validHeader) return@withContext null
 
             val list = mutableListOf<Classroom>()
             var index = 0

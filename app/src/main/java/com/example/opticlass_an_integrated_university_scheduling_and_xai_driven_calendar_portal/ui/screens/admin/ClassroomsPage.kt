@@ -10,9 +10,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -134,50 +133,70 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
             }
 
             if (previewList.isNotEmpty()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Preview (${previewList.size} items)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { previewList = emptyList() }) { Text("Discard") }
-                                Button(onClick = {
-                                    val toAdd = previewList.filter { new ->
-                                        AppRepository.classrooms.none { it.roomCode == new.roomCode }
-                                    }
-                                    AppRepository.classrooms.addAll(toAdd)
-                                    val skipped = previewList.size - toAdd.size
-                                    previewList = emptyList()
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            if (skipped > 0) "${toAdd.size} saved, $skipped duplicate(s) skipped."
-                                            else "${toAdd.size} classrooms saved."
-                                        )
-                                    }
-                                }) { Text("Save All") }
+                    Text("Preview (${previewList.size} items)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Button(
+                        onClick = {
+                            val toAdd = previewList.filter { new ->
+                                AppRepository.classrooms.none { it.roomCode == new.roomCode }
                             }
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Column(modifier = Modifier.heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
-                            previewList.forEach { classroom ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(classroom.roomCode, fontWeight = FontWeight.Medium)
+                            AppRepository.classrooms.addAll(toAdd)
+                            val skipped = previewList.size - toAdd.size
+                            previewList = emptyList()
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    if (skipped > 0) "${toAdd.size} saved, $skipped duplicate(s) skipped."
+                                    else "${toAdd.size} classrooms saved."
+                                )
+                            }
+                        },
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Done, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Save All")
+                    }
+                }
+
+                LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 80.dp)) {
+                    items(previewList) { classroom ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.School, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(classroom.roomCode, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                                     if (classroom.capacity > 0) {
-                                        Text("Cap: ${classroom.capacity}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                                        Text("Capacity: ${classroom.capacity}", fontSize = 12.sp, color = Color.Gray)
                                     }
                                 }
-                                HorizontalDivider()
+                                IconButton(onClick = { previewList = previewList - classroom }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Discard", tint = MaterialTheme.colorScheme.error)
+                                }
+                                IconButton(
+                                    onClick = {
+                                        val isDuplicate = AppRepository.classrooms.any { it.roomCode == classroom.roomCode }
+                                        previewList = previewList - classroom
+                                        if (isDuplicate) {
+                                            scope.launch { snackbarHostState.showSnackbar("'${classroom.roomCode}' already exists, skipped.") }
+                                        } else {
+                                            AppRepository.classrooms.add(classroom)
+                                            scope.launch { snackbarHostState.showSnackbar("'${classroom.roomCode}' saved.") }
+                                        }
+                                    }
+                                ) {
+                                    Icon(Icons.Default.Check, contentDescription = "Save", tint = MaterialTheme.colorScheme.primary)
+                                }
                             }
                         }
                     }

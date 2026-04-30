@@ -9,7 +9,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,7 +38,6 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
     val scope = rememberCoroutineScope()
     var isImporting by remember { mutableStateOf(false) }
     var previewList by remember { mutableStateOf<List<Classroom>>(emptyList()) }
-    var selectedDepartment by remember { mutableStateOf<String?>(null) }
     var pendingUri by remember { mutableStateOf<Uri?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
 
@@ -93,10 +91,6 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
         )
     }
 
-    val departments = AppRepository.classrooms.map { it.department }.distinct().sorted()
-    val filteredClassrooms = if (selectedDepartment == null) AppRepository.classrooms.toList()
-                             else AppRepository.classrooms.filter { it.department == selectedDepartment }
-
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -127,12 +121,12 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
                             .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(4.dp))
                             .padding(4.dp)
                     ) {
-                        listOf("Room Code", "Capacity", "Department").forEach {
+                        listOf("Room Code", "Capacity").forEach {
                             Text(it, modifier = Modifier.weight(1f), fontSize = 10.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                     Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp, start = 4.dp, end = 4.dp)) {
-                        listOf("A101", "40", "Computer Science").forEach {
+                        listOf("A101", "40").forEach {
                             Text(it, modifier = Modifier.weight(1f), fontSize = 9.sp, textAlign = TextAlign.Center, color = Color.Gray)
                         }
                     }
@@ -179,33 +173,13 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(classroom.roomCode, fontWeight = FontWeight.Medium)
-                                    Text(classroom.department, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                                    if (classroom.capacity > 0) {
+                                        Text("Cap: ${classroom.capacity}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                                    }
                                 }
                                 HorizontalDivider()
                             }
                         }
-                    }
-                }
-            }
-
-            if (departments.isNotEmpty()) {
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    item {
-                        FilterChip(
-                            selected = selectedDepartment == null,
-                            onClick = { selectedDepartment = null },
-                            label = { Text("All") }
-                        )
-                    }
-                    items(departments) { dept ->
-                        FilterChip(
-                            selected = selectedDepartment == dept,
-                            onClick = { selectedDepartment = if (selectedDepartment == dept) null else dept },
-                            label = { Text(dept) }
-                        )
                     }
                 }
             }
@@ -224,7 +198,7 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
-                    items(filteredClassrooms) { classroom ->
+                    items(AppRepository.classrooms.toList()) { classroom ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp)
@@ -243,12 +217,6 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
                                             Text("Capacity: ${classroom.capacity}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                                         }
                                     }
-                                }
-                                Surface(
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    shape = RoundedCornerShape(16.dp)
-                                ) {
-                                    Text(classroom.department, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium)
                                 }
                                 IconButton(onClick = { AppRepository.classrooms.remove(classroom) }) {
                                     Icon(Icons.Default.Clear, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
@@ -292,7 +260,6 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
 fun AddClassroomDialog(onDismiss: () -> Unit, onAdd: (Classroom) -> Unit) {
     var roomCode by remember { mutableStateOf("") }
     var capacity by remember { mutableStateOf("") }
-    var department by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf("") }
 
     AlertDialog(
@@ -302,7 +269,6 @@ fun AddClassroomDialog(onDismiss: () -> Unit, onAdd: (Classroom) -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = roomCode, onValueChange = { roomCode = it }, label = { Text("Room Code (e.g. A101)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(value = capacity, onValueChange = { capacity = it }, label = { Text("Capacity") }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
-                OutlinedTextField(value = department, onValueChange = { department = it }, label = { Text("Department / Building") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 if (errorMsg.isNotEmpty()) {
                     Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
@@ -312,13 +278,11 @@ fun AddClassroomDialog(onDismiss: () -> Unit, onAdd: (Classroom) -> Unit) {
             TextButton(onClick = {
                 when {
                     roomCode.isBlank() -> errorMsg = "Room code is required"
-                    department.isBlank() -> errorMsg = "Department is required"
                     else -> onAdd(
                         Classroom(
                             id = "room_${System.currentTimeMillis()}",
                             roomCode = roomCode.trim().uppercase(),
-                            capacity = capacity.toIntOrNull() ?: 0,
-                            department = department.trim()
+                            capacity = capacity.toIntOrNull() ?: 0
                         )
                     )
                 }
@@ -347,10 +311,9 @@ private suspend fun importClassroomData(context: Context, uri: Uri): List<Classr
                 val row = rows.next()
                 val roomCode = formatter.formatCellValue(row.getCell(0)).trim()
                 val capacityStr = formatter.formatCellValue(row.getCell(1)).trim()
-                val department = formatter.formatCellValue(row.getCell(2)).trim()
-                if (roomCode.isNotEmpty() && department.isNotEmpty()) {
+                if (roomCode.isNotEmpty()) {
                     val capacity = capacityStr.toIntOrNull() ?: 0
-                    list.add(Classroom(id = "room_${System.currentTimeMillis()}_${index++}", roomCode = roomCode, capacity = capacity, department = department))
+                    list.add(Classroom(id = "room_${System.currentTimeMillis()}_${index++}", roomCode = roomCode, capacity = capacity))
                 }
             }
             workbook.close()

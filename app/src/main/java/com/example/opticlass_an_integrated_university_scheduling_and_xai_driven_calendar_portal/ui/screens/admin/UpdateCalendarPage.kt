@@ -224,7 +224,7 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
                                     )
                                     AppRepository.classrooms.forEach { room ->
                                         DropdownMenuItem(
-                                            text = { Text("${room.roomCode} — ${room.department}") },
+                                            text = { Text(room.roomCode) },
                                             onClick = { selectedClassroom = room; classroomDropdownExpanded = false }
                                         )
                                     }

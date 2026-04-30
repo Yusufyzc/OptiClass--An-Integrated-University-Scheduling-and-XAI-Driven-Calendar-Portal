@@ -40,8 +40,7 @@ data class CourseImport(
 data class Classroom(
     val id: String,
     val roomCode: String,
-    val capacity: Int,
-    val department: String
+    val capacity: Int
 )
 
 data class ScheduleChange(

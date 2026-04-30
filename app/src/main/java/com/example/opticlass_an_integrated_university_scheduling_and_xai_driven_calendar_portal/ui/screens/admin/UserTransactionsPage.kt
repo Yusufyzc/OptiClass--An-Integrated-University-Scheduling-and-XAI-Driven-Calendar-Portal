@@ -137,19 +137,24 @@ fun CredentialsDialog(credentials: List<Pair<String, String>>, onDismiss: () -> 
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 HorizontalDivider()
-                credentials.forEach { (username, password) ->
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row {
-                                Text("Username: ", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Text(username, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
-                            }
-                            Row {
-                                Text("Password: ", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Text(password, fontSize = 13.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary)
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 400.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(credentials) { (username, password) ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row {
+                                    Text("Username: ", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text(username, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                                }
+                                Row {
+                                    Text("Password: ", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text(password, fontSize = 13.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary)
+                                }
                             }
                         }
                     }
@@ -262,28 +267,20 @@ fun EditUserDialog(user: User, onDismiss: () -> Unit, onSave: (User) -> Unit) {
                     ) {
                         Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Reset Password to Default")
+                        Text("Generate New Password")
                     }
 
                     if (showResetConfirm) {
                         AlertDialog(
                             onDismissRequest = { showResetConfirm = false },
-                            title = { Text("Reset Password") },
+                            title = { Text("Generate New Password") },
                             text = { Text("A new random password will be generated for ${user.fullName}. The new password will be shown once. Are you sure?") },
                             confirmButton = {
                                 TextButton(onClick = {
                                     showResetConfirm = false
                                     val newPass = generatePassword()
-                                    val plainUn = decodeUsername(user.username)
-                                    onSave(user.copy(
-                                        fullName = fullName.trim(),
-                                        email = email.trim(),
-                                        role = role,
-                                        password = sha256(newPass),
-                                        mustChangePassword = true
-                                    ))
-                                    resetCredential = plainUn to newPass
-                                }) { Text("Yes, Reset", color = MaterialTheme.colorScheme.error) }
+                                    resetCredential = decodeUsername(user.username) to newPass
+                                }) { Text("Yes, Generate", color = MaterialTheme.colorScheme.error) }
                             },
                             dismissButton = {
                                 TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
@@ -291,8 +288,20 @@ fun EditUserDialog(user: User, onDismiss: () -> Unit, onSave: (User) -> Unit) {
                         )
                     }
 
-                    resetCredential?.let { cred ->
-                        CredentialsDialog(credentials = listOf(cred), onDismiss = { resetCredential = null; onDismiss() })
+                    resetCredential?.let { (plainUn, newPass) ->
+                        CredentialsDialog(
+                            credentials = listOf(plainUn to newPass),
+                            onDismiss = {
+                                onSave(user.copy(
+                                    fullName = fullName.trim(),
+                                    email = email.trim(),
+                                    role = role,
+                                    password = sha256(newPass),
+                                    mustChangePassword = true
+                                ))
+                                resetCredential = null
+                            }
+                        )
                     }
                 }
                 if (errorMsg.isNotEmpty()) {

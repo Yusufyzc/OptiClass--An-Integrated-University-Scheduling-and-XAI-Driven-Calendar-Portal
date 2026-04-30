@@ -57,7 +57,7 @@ fun generateUsername(fullName: String): String {
         else -> "user"
     }
 
-    val allUsernames = globalUsers.map { decodeUsername(it.username) }
+    val allUsernames = AppRepository.users.map { decodeUsername(it.username) }
     if (base !in allUsernames) return base
     var i = 2
     while ("${base}_$i" in allUsernames) i++

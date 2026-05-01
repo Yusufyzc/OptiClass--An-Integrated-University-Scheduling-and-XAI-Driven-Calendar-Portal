@@ -32,7 +32,12 @@ import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.InputStream
 
 @Composable
-fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
+fun ClassroomsPage(
+    snackbarHostState: SnackbarHostState,
+    onAddClassroom: (Classroom, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
+    onDeleteClassroom: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
+    onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> }
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isImporting by remember { mutableStateOf(false) }
@@ -141,17 +146,15 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
                     Text("Preview (${previewList.size} items)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                     Button(
                         onClick = {
-                            val toAdd = previewList.filter { new ->
-                                AppRepository.classrooms.none { it.roomCode == new.roomCode }
-                            }
-                            AppRepository.classrooms.addAll(toAdd)
-                            val skipped = previewList.size - toAdd.size
+                            val toSave = previewList.toList()
                             previewList = emptyList()
-                            scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    if (skipped > 0) "${toAdd.size} saved, $skipped duplicate(s) skipped."
-                                    else "${toAdd.size} classrooms saved."
-                                )
+                            onImportClassrooms(toSave) { saved, skipped ->
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        if (skipped > 0) "$saved saved, $skipped duplicate(s) skipped."
+                                        else "$saved classrooms saved."
+                                    )
+                                }
                             }
                         },
                         shape = RoundedCornerShape(8.dp)
@@ -185,13 +188,14 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
                                 }
                                 IconButton(
                                     onClick = {
-                                        val isDuplicate = AppRepository.classrooms.any { it.roomCode == classroom.roomCode }
                                         previewList = previewList - classroom
-                                        if (isDuplicate) {
-                                            scope.launch { snackbarHostState.showSnackbar("'${classroom.roomCode}' already exists, skipped.") }
-                                        } else {
-                                            AppRepository.classrooms.add(classroom)
-                                            scope.launch { snackbarHostState.showSnackbar("'${classroom.roomCode}' saved.") }
+                                        onImportClassrooms(listOf(classroom)) { saved, _ ->
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    if (saved > 0) "'${classroom.roomCode}' saved."
+                                                    else "'${classroom.roomCode}' already exists, skipped."
+                                                )
+                                            }
                                         }
                                     }
                                 ) {
@@ -237,7 +241,9 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
                                         }
                                     }
                                 }
-                                IconButton(onClick = { AppRepository.classrooms.remove(classroom) }) {
+                                IconButton(onClick = {
+                                    onDeleteClassroom(classroom.id) { _, _ -> }
+                                }) {
                                     Icon(Icons.Default.Clear, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                                 }
                             }
@@ -265,11 +271,18 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState) {
             onAdd = { classroom ->
                 if (AppRepository.classrooms.any { it.roomCode.equals(classroom.roomCode, ignoreCase = true) }) {
                     scope.launch { snackbarHostState.showSnackbar("Room code '${classroom.roomCode}' already exists.") }
+                    showAddDialog = false
                 } else {
-                    AppRepository.classrooms.add(classroom)
-                    scope.launch { snackbarHostState.showSnackbar("Classroom '${classroom.roomCode}' added.") }
+                    onAddClassroom(classroom) { success, _ ->
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                if (success) "Classroom '${classroom.roomCode}' added."
+                                else "Failed to add classroom."
+                            )
+                        }
+                    }
+                    showAddDialog = false
                 }
-                showAddDialog = false
             }
         )
     }

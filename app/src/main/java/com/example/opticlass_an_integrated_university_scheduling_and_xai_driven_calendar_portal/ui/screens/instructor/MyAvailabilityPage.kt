@@ -19,7 +19,12 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
 @Composable
-fun MyAvailabilityPage(instructorName: String, snackbarHostState: SnackbarHostState) {
+fun MyAvailabilityPage(
+    instructorName: String,
+    snackbarHostState: SnackbarHostState,
+    onSendMessage: (toUser: String, content: String, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onSubmitAvailability: (username: String, slots: Map<String, Set<String>>, (Boolean) -> Unit) -> Unit = { _, _, _ -> }
+) {
     val scope = rememberCoroutineScope()
 
     val initialDraft = AppRepository.availabilityDrafts[instructorName] ?: emptyMap()
@@ -47,18 +52,10 @@ fun MyAvailabilityPage(instructorName: String, snackbarHostState: SnackbarHostSt
                 scope.launch { snackbarHostState.showSnackbar("Draft saved.") }
             }) { Text("Save Changes") }
             Button(onClick = {
-                val availability = Availability(instructorName, selectedSlots.mapValues { it.value.toSet() })
-                AppRepository.availabilities.removeAll { it.instructorName == instructorName }
-                AppRepository.availabilities.add(availability)
-                AppRepository.availabilityDrafts[instructorName] = availability.slots
-                val adminUsername = AppRepository.users.find { it.role == UserRole.ADMIN }?.username ?: encodeUsername("admin")
-                AppRepository.messages.add(
-                    Message(
-                        sender = instructorName,
-                        recipient = adminUsername,
-                        content = "I have submitted my availability. Please review it."
-                    )
-                )
+                val slots = selectedSlots.mapValues { it.value.toSet() }
+                AppRepository.availabilityDrafts[instructorName] = slots
+                onSubmitAvailability(instructorName, slots) { _ -> }
+                onSendMessage("admin", "I have submitted my availability. Please review it.") { _ -> }
                 scope.launch { snackbarHostState.showSnackbar("Availability sent to admin!") }
             }) { Text("Send to Admin") }
         }

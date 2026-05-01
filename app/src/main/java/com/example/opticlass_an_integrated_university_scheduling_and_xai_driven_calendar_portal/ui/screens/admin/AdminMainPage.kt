@@ -18,9 +18,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun AdminMainPage(adminName: String) {
+fun AdminMainPage(
+    adminName: String,
+    onLoadMessages: (withUser: String, () -> Unit) -> Unit = { _, _ -> },
+    onLoadAllMessages: (() -> Unit) -> Unit = { _ -> },
+    onSendMessage: (toUser: String, content: String, (Boolean) -> Unit) -> Unit = { _, _, _ -> }
+) {
     var selectedUser by remember { mutableStateOf<String?>(null) }
     var showNewChatDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        onLoadAllMessages {}
+    }
 
     val conversationUsers = AppRepository.messages
         .filter { it.recipient == adminName || it.sender == adminName }
@@ -35,7 +44,7 @@ fun AdminMainPage(adminName: String) {
     val assignedCourseCodes = AppRepository.users.flatMap { user ->
         user.schedule.values.flatMap { day -> day.values.filterNotNull().map { it.code } }
     }.toSet()
-    val allInstructorCourses = AppRepository.users.filter { it.role == UserRole.INSTRUCTOR }.flatMap { it.courses }
+    val allInstructorCourses = AppRepository.courseImports
     val unassignedCourses = allInstructorCourses.filter { it.code !in assignedCourseCodes }
     val bookedSlotsPerRoom = AppRepository.users.flatMap { user ->
         user.schedule.entries.flatMap { (day, dayMap) ->
@@ -244,7 +253,12 @@ fun AdminMainPage(adminName: String) {
     } else {
         Column(modifier = Modifier.fillMaxSize()) {
             TextButton(onClick = { selectedUser = null }) { Text("< Back") }
-            ChatBox(adminName, selectedUser!!)
+            ChatBox(
+                currentUserName = adminName,
+                targetUserName = selectedUser!!,
+                onLoadMessages = onLoadMessages,
+                onSendMessage = onSendMessage
+            )
         }
     }
 }

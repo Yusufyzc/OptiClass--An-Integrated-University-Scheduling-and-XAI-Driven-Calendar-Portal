@@ -19,7 +19,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun UserTransactionsPage(currentUserName: String = "") {
+fun UserTransactionsPage(
+    currentUserName: String = "",
+    onAddUser: (String, String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _, _ -> },
+    onDeleteUser: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
+    onUpdateUser: (String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _ -> },
+    onResetPassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> }
+) {
     var showAddDialog by remember { mutableStateOf(false) }
     var userToDelete by remember { mutableStateOf<User?>(null) }
     var userToEdit by remember { mutableStateOf<User?>(null) }
@@ -76,9 +82,11 @@ fun UserTransactionsPage(currentUserName: String = "") {
     if (showAddDialog) {
         AddUserDialog(
             onDismiss = { showAddDialog = false },
-            onAdd = { newUser ->
-                AppRepository.users.add(newUser)
-                showAddDialog = false
+            onAdd = { username, password, role, fullName, email, callback ->
+                onAddUser(username, password, role, fullName, email) { success, error ->
+                    callback(success, error)
+                    if (success) showAddDialog = false
+                }
             }
         )
     }
@@ -91,11 +99,14 @@ fun UserTransactionsPage(currentUserName: String = "") {
             confirmButton = {
                 TextButton(onClick = {
                     val target = userToDelete!!.username
-                    AppRepository.users.removeAll { it.username == target }
-                    AppRepository.messages.removeAll { it.sender == target || it.recipient == target }
-                    AppRepository.availabilities.removeAll { it.instructorName == target }
-                    AppRepository.availabilityDrafts.remove(target)
-                    AppRepository.notifications.removeAll { it.recipientName == target }
+                    onDeleteUser(target) { success, _ ->
+                        if (success) {
+                            AppRepository.messages.removeAll { it.sender == target || it.recipient == target }
+                            AppRepository.availabilities.removeAll { it.instructorName == target }
+                            AppRepository.availabilityDrafts.remove(target)
+                            AppRepository.notifications.removeAll { it.recipientName == target }
+                        }
+                    }
                     userToDelete = null
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },
@@ -109,10 +120,14 @@ fun UserTransactionsPage(currentUserName: String = "") {
         EditUserDialog(
             user = userToEdit!!,
             onDismiss = { userToEdit = null },
-            onSave = { updated ->
-                val index = AppRepository.users.indexOfFirst { it.username == updated.username }
-                if (index != -1) AppRepository.users[index] = updated
-                userToEdit = null
+            onSave = { username, fullName, email, role, callback ->
+                onUpdateUser(username, fullName, email, role) { success, error ->
+                    callback(success, error)
+                    if (success) userToEdit = null
+                }
+            },
+            onResetPassword = { username, newPassword, callback ->
+                onResetPassword(username, newPassword, callback)
             }
         )
     }
@@ -168,13 +183,14 @@ fun CredentialsDialog(credentials: List<Pair<String, String>>, onDismiss: () -> 
 }
 
 @Composable
-fun AddUserDialog(onDismiss: () -> Unit, onAdd: (User) -> Unit) {
+fun AddUserDialog(onDismiss: () -> Unit, onAdd: (String, String, String, String, String, (Boolean, String?) -> Unit) -> Unit) {
     var username by remember { mutableStateOf("") }
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var role by remember { mutableStateOf(UserRole.INSTRUCTOR) }
     var errorMsg by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -202,38 +218,50 @@ fun AddUserDialog(onDismiss: () -> Unit, onAdd: (User) -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                val trimmedUsername = username.trim()
-                when {
-                    trimmedUsername.isBlank() -> errorMsg = "Username is required"
-                    AppRepository.users.any { decodeUsername(it.username).equals(trimmedUsername, ignoreCase = true) } -> errorMsg = "Username already exists"
-                    fullName.isBlank() -> errorMsg = "Full name is required"
-                    email.isNotBlank() && !isValidEmail(email) -> errorMsg = "Enter a valid email address"
-                    password.length < 6 -> errorMsg = "Password must be at least 6 characters"
-                    else -> onAdd(User(
-                        username = encodeUsername(trimmedUsername.lowercase()),
-                        password = sha256(password),
-                        role = role,
-                        fullName = fullName.trim(),
-                        email = email.trim(),
-                        mustChangePassword = role == UserRole.INSTRUCTOR
-                    ))
-                }
-            }) { Text("Add") }
+            TextButton(
+                onClick = {
+                    val trimmedUsername = username.trim().lowercase()
+                    when {
+                        trimmedUsername.isBlank() -> errorMsg = "Username is required"
+                        AppRepository.users.any { it.username.equals(trimmedUsername, ignoreCase = true) } -> errorMsg = "Username already exists"
+                        fullName.isBlank() -> errorMsg = "Full name is required"
+                        email.isNotBlank() && !isValidEmail(email) -> errorMsg = "Enter a valid email address"
+                        password.length < 6 -> errorMsg = "Password must be at least 6 characters"
+                        else -> {
+                            isLoading = true
+                            errorMsg = ""
+                            onAdd(trimmedUsername, password, role.name, fullName.trim(), email.trim()) { success, error ->
+                                isLoading = false
+                                if (!success) errorMsg = error ?: "Kullanıcı eklenemedi"
+                            }
+                        }
+                    }
+                },
+                enabled = !isLoading
+            ) {
+                if (isLoading) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                else Text("Add")
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
 @Composable
-fun EditUserDialog(user: User, onDismiss: () -> Unit, onSave: (User) -> Unit) {
+fun EditUserDialog(
+    user: User,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, String, (Boolean, String?) -> Unit) -> Unit,
+    onResetPassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> }
+) {
     var fullName by remember { mutableStateOf(user.fullName) }
     var email by remember { mutableStateOf(user.email) }
     var role by remember { mutableStateOf(user.role) }
     var errorMsg by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
     var resetCredential by remember { mutableStateOf<Pair<String, String>?>(null) }
-    val isSuperuser = decodeUsername(user.username) == "admin"
+    val isSuperuser = user.username == "admin"
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -292,13 +320,7 @@ fun EditUserDialog(user: User, onDismiss: () -> Unit, onSave: (User) -> Unit) {
                         CredentialsDialog(
                             credentials = listOf(plainUn to newPass),
                             onDismiss = {
-                                onSave(user.copy(
-                                    fullName = fullName.trim(),
-                                    email = email.trim(),
-                                    role = role,
-                                    password = sha256(newPass),
-                                    mustChangePassword = true
-                                ))
+                                onResetPassword(user.username, newPass) { _, _ -> }
                                 resetCredential = null
                             }
                         )
@@ -310,12 +332,25 @@ fun EditUserDialog(user: User, onDismiss: () -> Unit, onSave: (User) -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                when {
-                    fullName.isBlank() -> errorMsg = "Full name is required"
-                    else -> onSave(user.copy(fullName = fullName.trim(), email = email.trim(), role = role))
-                }
-            }) { Text("Save") }
+            TextButton(
+                onClick = {
+                    when {
+                        fullName.isBlank() -> errorMsg = "Full name is required"
+                        else -> {
+                            isLoading = true
+                            errorMsg = ""
+                            onSave(user.username, fullName.trim(), email.trim(), role.name) { success, error ->
+                                isLoading = false
+                                if (!success) errorMsg = error ?: "Güncelleme başarısız"
+                            }
+                        }
+                    }
+                },
+                enabled = !isLoading
+            ) {
+                if (isLoading) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                else Text("Save")
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

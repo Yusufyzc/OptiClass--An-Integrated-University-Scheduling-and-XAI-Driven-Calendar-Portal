@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun SettingsPage(userName: String) {
+fun SettingsPage(userName: String, onChangePassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> }) {
     val user = AppRepository.users.find { it.username == userName }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
 
@@ -124,28 +124,26 @@ fun SettingsPage(userName: String) {
         }
     }
 
-    if (showChangePasswordDialog && user != null) {
+    if (showChangePasswordDialog) {
         ChangePasswordDialog(
-            user = user,
             onDismiss = { showChangePasswordDialog = false },
-            onSave = { hashedPassword ->
-                val index = AppRepository.users.indexOfFirst { it.username == userName }
-                if (index != -1) AppRepository.users[index] = AppRepository.users[index].copy(
-                    password = hashedPassword,
-                    mustChangePassword = false
-                )
-                showChangePasswordDialog = false
+            onSave = { current, new, callback ->
+                onChangePassword(current, new) { success, error ->
+                    callback(success, error)
+                    if (success) showChangePasswordDialog = false
+                }
             }
         )
     }
 }
 
 @Composable
-fun ChangePasswordDialog(user: User, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+fun ChangePasswordDialog(onDismiss: () -> Unit, onSave: (String, String, (Boolean, String?) -> Unit) -> Unit) {
     var currentPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -158,7 +156,8 @@ fun ChangePasswordDialog(user: User, onDismiss: () -> Unit, onSave: (String) -> 
                     label = { Text("Current Password") },
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    enabled = !isLoading
                 )
                 OutlinedTextField(
                     value = newPassword,
@@ -166,7 +165,8 @@ fun ChangePasswordDialog(user: User, onDismiss: () -> Unit, onSave: (String) -> 
                     label = { Text("New Password") },
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    enabled = !isLoading
                 )
                 OutlinedTextField(
                     value = confirmPassword,
@@ -174,7 +174,8 @@ fun ChangePasswordDialog(user: User, onDismiss: () -> Unit, onSave: (String) -> 
                     label = { Text("Confirm New Password") },
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    enabled = !isLoading
                 )
                 if (errorMsg.isNotEmpty()) {
                     Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
@@ -182,15 +183,26 @@ fun ChangePasswordDialog(user: User, onDismiss: () -> Unit, onSave: (String) -> 
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                when {
-                    sha256(currentPassword) != user.password -> errorMsg = "Current password is incorrect"
-                    newPassword.length < 6 -> errorMsg = "New password must be at least 6 characters"
-                    newPassword != confirmPassword -> errorMsg = "Passwords do not match"
-                    sha256(newPassword) == user.password -> errorMsg = "New password must be different from current"
-                    else -> onSave(sha256(newPassword))
-                }
-            }) { Text("Save") }
+            TextButton(
+                onClick = {
+                    when {
+                        newPassword.length < 6 -> errorMsg = "New password must be at least 6 characters"
+                        newPassword != confirmPassword -> errorMsg = "Passwords do not match"
+                        else -> {
+                            isLoading = true
+                            errorMsg = ""
+                            onSave(currentPassword, newPassword) { success, error ->
+                                isLoading = false
+                                if (!success) errorMsg = error ?: "Password change failed"
+                            }
+                        }
+                    }
+                },
+                enabled = !isLoading
+            ) {
+                if (isLoading) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                else Text("Save")
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

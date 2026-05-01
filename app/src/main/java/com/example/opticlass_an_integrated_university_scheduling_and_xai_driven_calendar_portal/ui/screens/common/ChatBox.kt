@@ -13,19 +13,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 
 @Composable
-fun ChatBox(currentUserName: String, targetUserName: String) {
+fun ChatBox(
+    currentUserName: String,
+    targetUserName: String,
+    onLoadMessages: (withUser: String, () -> Unit) -> Unit = { _, _ -> },
+    onSendMessage: (toUser: String, content: String, (Boolean) -> Unit) -> Unit = { _, _, _ -> }
+) {
     var text by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    var isSending by remember { mutableStateOf(false) }
+
+    LaunchedEffect(targetUserName) {
+        onLoadMessages(targetUserName) {}
+    }
+
+    LaunchedEffect(targetUserName) {
+        while (true) {
+            delay(5000)
+            onLoadMessages(targetUserName) {}
+        }
+    }
 
     LaunchedEffect(AppRepository.messages.size) {
-        AppRepository.messages.indices.forEach { i ->
-            val m = AppRepository.messages[i]
-            if (m.sender == targetUserName && m.recipient == currentUserName && !m.isRead) {
-                AppRepository.messages[i] = m.copy(isRead = true)
-            }
-        }
+        AppRepository.messages
+            .filter { it.sender == targetUserName && it.recipient == currentUserName && !it.isRead }
+            .forEach { AppRepository.markMessageRead(it.timestamp) }
     }
 
     val chatMessages = AppRepository.messages.filter {
@@ -79,14 +94,20 @@ fun ChatBox(currentUserName: String, targetUserName: String) {
                 value = text,
                 onValueChange = { text = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Message...") }
+                placeholder = { Text("Message...") },
+                enabled = !isSending
             )
-            IconButton(onClick = {
-                if (text.isNotBlank()) {
-                    AppRepository.messages.add(Message(currentUserName, targetUserName, text))
-                    text = ""
-                }
-            }) {
+            IconButton(
+                onClick = {
+                    if (text.isNotBlank() && !isSending) {
+                        isSending = true
+                        val content = text
+                        text = ""
+                        onSendMessage(targetUserName, content) { isSending = false }
+                    }
+                },
+                enabled = !isSending
+            ) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
             }
         }

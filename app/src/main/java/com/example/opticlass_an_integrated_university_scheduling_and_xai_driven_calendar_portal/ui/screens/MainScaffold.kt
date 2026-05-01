@@ -16,19 +16,35 @@ import kotlinx.coroutines.launch
 @Composable
 fun OptiClassApp(viewModel: AppViewModel) {
     if (!viewModel.isLoggedIn) {
-        LoginScreen { username, password -> viewModel.login(username, password) }
+        LoginScreen { username, password, callback -> viewModel.login(username, password, callback) }
     } else {
-        val currentUser = AppRepository.users.find { it.username == viewModel.currentUserName }
-        if (currentUser?.mustChangePassword == true) {
+        if (viewModel.mustChangePassword) {
             ForceChangePasswordScreen(
                 encodedUsername = viewModel.currentUserName,
-                onPasswordChanged = { }
+                onPasswordChanged = { viewModel.clearMustChangePassword() },
+                onChangePassword = { current, new, cb -> viewModel.changePassword(current, new, cb) }
             )
         } else {
             MainScaffold(
                 role = viewModel.userRole,
                 userName = viewModel.currentUserName,
-                onLogout = { viewModel.logout() }
+                onLogout = { viewModel.logout() },
+                onChangePassword = { current, new, cb -> viewModel.changePassword(current, new, cb) },
+                onAddUser = { u, p, r, fn, e, cb -> viewModel.addUser(u, p, r, fn, e, cb) },
+                onDeleteUser = { u, cb -> viewModel.deleteUser(u, cb) },
+                onUpdateUser = { u, fn, e, r, cb -> viewModel.updateUser(u, fn, e, r, cb) },
+                onResetPassword = { u, np, cb -> viewModel.resetUserPassword(u, np, cb) },
+                onImportCourses = { courses, cb -> viewModel.importCourseData(courses, cb) },
+                onDeleteCourse = { code, cb -> viewModel.deleteCourse(code, cb) },
+                onLoadMessages = { withUser, cb -> viewModel.loadMessages(withUser) { cb() } },
+                onLoadAllMessages = { cb -> viewModel.loadMessages(null) { cb() } },
+                onSendMessage = { to, content, cb -> viewModel.sendMessage(to, content, cb) },
+                onSubmitAvailability = { u, s, cb -> viewModel.submitAvailability(u, s, cb) },
+                onSaveSchedule = { u, d -> viewModel.saveSchedule(u, d) },
+                onSendNotification = { r, t -> viewModel.sendNotification(r, t) },
+                onAddClassroom = { c, cb -> viewModel.addClassroom(c, cb) },
+                onDeleteClassroom = { id, cb -> viewModel.deleteClassroom(id, cb) },
+                onImportClassrooms = { list, cb -> viewModel.importClassrooms(list, cb) }
             )
         }
     }
@@ -36,7 +52,27 @@ fun OptiClassApp(viewModel: AppViewModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit) {
+fun MainScaffold(
+    role: UserRole,
+    userName: String,
+    onLogout: () -> Unit,
+    onChangePassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> },
+    onAddUser: (String, String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _, _ -> },
+    onDeleteUser: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
+    onUpdateUser: (String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _ -> },
+    onResetPassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> },
+    onImportCourses: (List<CourseImport>, (List<Pair<String, String>>) -> Unit) -> Unit = { _, _ -> },
+    onDeleteCourse: (String, (Boolean) -> Unit) -> Unit = { _, _ -> },
+    onLoadMessages: (withUser: String, () -> Unit) -> Unit = { _, _ -> },
+    onLoadAllMessages: (() -> Unit) -> Unit = { _ -> },
+    onSendMessage: (toUser: String, content: String, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onSubmitAvailability: (username: String, slots: Map<String, Set<String>>, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onSaveSchedule: (username: String, draft: Map<String, androidx.compose.runtime.snapshots.SnapshotStateMap<String, CourseImport?>>) -> Unit = { _, _ -> },
+    onSendNotification: (recipientUsername: String, text: String) -> Unit = { _, _ -> },
+    onAddClassroom: (Classroom, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
+    onDeleteClassroom: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
+    onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> }
+) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -189,13 +225,27 @@ fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit) {
             Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
                 when {
                     role == UserRole.ADMIN && currentDestination == AppDestinations.MAIN_PAGE ->
-                        AdminMainPage(userName)
+                        AdminMainPage(
+                            adminName = userName,
+                            onLoadMessages = onLoadMessages,
+                            onLoadAllMessages = onLoadAllMessages,
+                            onSendMessage = onSendMessage
+                        )
                     role == UserRole.INSTRUCTOR && currentDestination == AppDestinations.MAIN_PAGE ->
                         InstructorMainPage(userName, onNavigate = { currentDestination = it }, onShowNotifications = { showNotificationMenu = true })
                     role == UserRole.INSTRUCTOR && currentDestination == AppDestinations.NOTIFICATIONS ->
-                        ChatBox(userName, encodeUsername("admin"))
+                        ChatBox(
+                            currentUserName = userName,
+                            targetUserName = "admin",
+                            onLoadMessages = onLoadMessages,
+                            onSendMessage = onSendMessage
+                        )
                     currentDestination == AppDestinations.MY_AVAILABILITY ->
-                        MyAvailabilityPage(userName, snackbarHostState)
+                        MyAvailabilityPage(
+                            userName, snackbarHostState,
+                            onSendMessage = onSendMessage,
+                            onSubmitAvailability = onSubmitAvailability
+                        )
                     currentDestination == AppDestinations.MY_LECTURES ->
                         MyLecturesPage(userName)
                     currentDestination == AppDestinations.MY_SCHEDULE ->
@@ -203,15 +253,34 @@ fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit) {
                     currentDestination == AppDestinations.INSTRUCTOR_AVAILABILITY ->
                         InstructorAvailabilityAdminPage()
                     currentDestination == AppDestinations.DATA_IMPORT ->
-                        DataImportPage(snackbarHostState)
+                        DataImportPage(
+                            snackbarHostState,
+                            onImport = onImportCourses,
+                            onDeleteCourse = onDeleteCourse
+                        )
                     currentDestination == AppDestinations.USER_TRANSACTIONS ->
-                        UserTransactionsPage(userName)
+                        UserTransactionsPage(
+                            currentUserName = userName,
+                            onAddUser = onAddUser,
+                            onDeleteUser = onDeleteUser,
+                            onUpdateUser = onUpdateUser,
+                            onResetPassword = onResetPassword
+                        )
                     currentDestination == AppDestinations.UPDATE_CALENDAR ->
-                        UpdateCalendarPage(snackbarHostState, userName)
+                        UpdateCalendarPage(
+                            snackbarHostState, userName,
+                            onSaveSchedule = onSaveSchedule,
+                            onSendNotification = onSendNotification
+                        )
                     currentDestination == AppDestinations.CLASSROOMS ->
-                        ClassroomsPage(snackbarHostState)
+                        ClassroomsPage(
+                            snackbarHostState,
+                            onAddClassroom = onAddClassroom,
+                            onDeleteClassroom = onDeleteClassroom,
+                            onImportClassrooms = onImportClassrooms
+                        )
                     currentDestination == AppDestinations.SETTINGS ->
-                        SettingsPage(userName)
+                        SettingsPage(userName, onChangePassword = onChangePassword)
                     else -> GenericPage(currentDestination.label)
                 }
             }

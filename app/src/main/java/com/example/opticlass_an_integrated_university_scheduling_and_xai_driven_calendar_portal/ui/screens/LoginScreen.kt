@@ -11,10 +11,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun LoginScreen(onLoginResult: (String, String) -> Boolean) {
+fun LoginScreen(onLogin: (String, String, (Boolean, String?) -> Unit) -> Unit) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -27,7 +28,8 @@ fun LoginScreen(onLoginResult: (String, String) -> Boolean) {
             value = username,
             onValueChange = { username = it },
             label = { Text("Username") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isLoading
         )
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(
@@ -35,7 +37,8 @@ fun LoginScreen(onLoginResult: (String, String) -> Boolean) {
             onValueChange = { password = it },
             label = { Text("Password") },
             visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isLoading
         )
         if (errorMessage.isNotEmpty()) {
             Text(text = errorMessage, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
@@ -43,33 +46,47 @@ fun LoginScreen(onLoginResult: (String, String) -> Boolean) {
         Spacer(modifier = Modifier.height(24.dp))
         Button(
             onClick = {
-                if (!onLoginResult(username, password)) {
-                    errorMessage = "Invalid username or password"
+                if (!isLoading) {
+                    isLoading = true
+                    errorMessage = ""
+                    onLogin(username, password) { success, error ->
+                        isLoading = false
+                        if (!success) errorMessage = error ?: "Invalid username or password"
+                    }
                 }
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isLoading
         ) {
-            Text("Login")
+            if (isLoading) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            else Text("Login")
         }
     }
 }
 
 @Composable
-fun ForceChangePasswordScreen(encodedUsername: String, onPasswordChanged: () -> Unit) {
-    val user = AppRepository.users.find { it.username == encodedUsername } ?: return
+fun ForceChangePasswordScreen(
+    encodedUsername: String,
+    onPasswordChanged: () -> Unit,
+    onChangePassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> }
+) {
+    val user = AppRepository.users.find { it.username == encodedUsername }
     var currentPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        UserAvatar(fullName = user.fullName, username = encodedUsername, avatarUri = user.avatarUri, size = 72.dp)
+        if (user != null) {
+            UserAvatar(fullName = user.fullName, username = encodedUsername, avatarUri = user.avatarUri, size = 72.dp)
+        }
         Spacer(Modifier.height(16.dp))
-        Text("Welcome, ${user.fullName}!", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text("Welcome!", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)),
@@ -115,25 +132,24 @@ fun ForceChangePasswordScreen(encodedUsername: String, onPasswordChanged: () -> 
         Button(
             onClick = {
                 when {
-                    sha256(currentPassword) != user.password -> errorMsg = "Current password is incorrect"
                     newPassword.length < 6 -> errorMsg = "New password must be at least 6 characters"
                     newPassword != confirmPassword -> errorMsg = "Passwords do not match"
-                    sha256(newPassword) == user.password -> errorMsg = "New password must be different from current"
                     else -> {
-                        val index = AppRepository.users.indexOfFirst { it.username == encodedUsername }
-                        if (index != -1) {
-                            AppRepository.users[index] = AppRepository.users[index].copy(
-                                password = sha256(newPassword),
-                                mustChangePassword = false
-                            )
+                        isLoading = true
+                        errorMsg = ""
+                        onChangePassword(currentPassword, newPassword) { success, error ->
+                            isLoading = false
+                            if (success) onPasswordChanged()
+                            else errorMsg = error ?: "Password change failed"
                         }
-                        onPasswordChanged()
                     }
                 }
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isLoading
         ) {
-            Text("Set New Password")
+            if (isLoading) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            else Text("Set New Password")
         }
     }
 }

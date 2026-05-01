@@ -34,25 +34,33 @@ import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.InputStream
 
 @Composable
-fun DataImportPage(snackbarHostState: SnackbarHostState) {
+fun DataImportPage(
+    snackbarHostState: SnackbarHostState,
+    onImport: (List<CourseImport>, (List<Pair<String, String>>) -> Unit) -> Unit = { _, _ -> },
+    onDeleteCourse: (String, (Boolean) -> Unit) -> Unit = { _, _ -> }
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isImporting by remember { mutableStateOf(false) }
+    var previewList by remember { mutableStateOf<List<CourseImport>>(emptyList()) }
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
     var newCredentials by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var courseToDelete by remember { mutableStateOf<CourseImport?>(null) }
+    var showSavedCourses by remember { mutableStateOf(false) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            if (AppRepository.courseImports.isNotEmpty()) {
+            if (previewList.isNotEmpty()) {
                 pendingImportUri = uri
             } else {
                 scope.launch {
                     isImporting = true
-                    val success = importExcelData(context, uri)
+                    val result = importExcelData(context, uri)
                     isImporting = false
-                    if (success) {
+                    if (result != null) {
+                        previewList = result
                         snackbarHostState.showSnackbar("Excel data imported! Review and save below.")
                     } else {
                         snackbarHostState.showSnackbar("Failed to parse Excel file. Check format.")
@@ -66,16 +74,17 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
         AlertDialog(
             onDismissRequest = { pendingImportUri = null },
             title = { Text("Replace Current Preview?") },
-            text = { Text("You have ${AppRepository.courseImports.size} unsaved item(s) in the preview. Loading a new file will discard them. Continue?") },
+            text = { Text("You have ${previewList.size} unsaved item(s) in the preview. Loading a new file will discard them. Continue?") },
             confirmButton = {
                 TextButton(onClick = {
                     val uri = pendingImportUri!!
                     pendingImportUri = null
                     scope.launch {
                         isImporting = true
-                        val success = importExcelData(context, uri)
+                        val result = importExcelData(context, uri)
                         isImporting = false
-                        if (success) {
+                        if (result != null) {
+                            previewList = result
                             snackbarHostState.showSnackbar("Excel data imported! Review and save below.")
                         } else {
                             snackbarHostState.showSnackbar("Failed to parse Excel file. Check format.")
@@ -131,7 +140,10 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
                 }
             }
 
-            if (AppRepository.courseImports.isEmpty()) {
+            SavedCoursesSection(onDeleteCourse = { course -> courseToDelete = course })
+            Spacer(Modifier.height(12.dp))
+
+            if (previewList.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.LightGray)
@@ -149,16 +161,14 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Preview (${AppRepository.courseImports.size} items)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Text("Preview (${previewList.size} items)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                     Button(
                         onClick = {
-                            val listToSave = AppRepository.courseImports.toList()
-                            val created = listToSave.mapNotNull { saveCourseImport(it) }
-                            AppRepository.courseImports.clear()
-                            if (created.isNotEmpty()) {
-                                newCredentials = created
-                            } else {
-                                scope.launch { snackbarHostState.showSnackbar("All instructors and courses saved!") }
+                            val listToSave = previewList
+                            previewList = emptyList()
+                            onImport(listToSave) { created ->
+                                if (created.isNotEmpty()) newCredentials = created
+                                else scope.launch { snackbarHostState.showSnackbar("All instructors and courses saved!") }
                             }
                         },
                         shape = RoundedCornerShape(8.dp)
@@ -170,7 +180,7 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
                 }
 
                 LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(AppRepository.courseImports) { course ->
+                    items(previewList) { course ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -204,7 +214,7 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
                                         Text(course.email, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
                                     }
                                 }
-                                IconButton(onClick = { AppRepository.courseImports.remove(course) }) {
+                                IconButton(onClick = { previewList = previewList - course }) {
                                     Icon(Icons.Default.Clear, contentDescription = "Discard", tint = MaterialTheme.colorScheme.error)
                                 }
                                 Box(
@@ -213,12 +223,10 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
                                         .clip(CircleShape)
                                         .background(MaterialTheme.colorScheme.primaryContainer)
                                         .clickable {
-                                            val cred = saveCourseImport(course)
-                                            AppRepository.courseImports.remove(course)
-                                            if (cred != null) {
-                                                newCredentials = listOf(cred)
-                                            } else {
-                                                scope.launch { snackbarHostState.showSnackbar("Saved ${course.lecturer}") }
+                                            previewList = previewList - course
+                                            onImport(listOf(course)) { created ->
+                                                if (created.isNotEmpty()) newCredentials = created
+                                                else scope.launch { snackbarHostState.showSnackbar("Saved ${course.lecturer}") }
                                             }
                                         },
                                     contentAlignment = Alignment.Center
@@ -250,43 +258,100 @@ fun DataImportPage(snackbarHostState: SnackbarHostState) {
     if (newCredentials.isNotEmpty()) {
         CredentialsDialog(credentials = newCredentials, onDismiss = { newCredentials = emptyList() })
     }
-}
 
-fun saveCourseImport(course: CourseImport): Pair<String, String>? {
-    val plainUsername = course.email.substringBefore("@").ifBlank { generateUsername(course.lecturer) }
-    val encodedUn = encodeUsername(plainUsername)
-    val existingIndex = AppRepository.users.indexOfFirst { it.username == encodedUn }
-
-    if (existingIndex != -1) {
-        val existingUser = AppRepository.users[existingIndex]
-        if (existingUser.courses.none { it.code == course.code }) {
-            val updatedCourses = existingUser.courses.toMutableList().also { it.add(course) }
-            AppRepository.users[existingIndex] = existingUser.copy(courses = updatedCourses)
-        }
-        return null
-    } else {
-        val plainPassword = generatePassword()
-        AppRepository.users.add(
-            User(
-                username = encodedUn,
-                password = sha256(plainPassword),
-                role = UserRole.INSTRUCTOR,
-                fullName = course.lecturer,
-                email = course.email,
-                department = course.department,
-                mustChangePassword = true,
-                courses = mutableListOf(course)
-            )
+    if (courseToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { courseToDelete = null },
+            title = { Text("Delete Course") },
+            text = { Text("\"${courseToDelete!!.code} - ${courseToDelete!!.name}\" silinecek. Emin misin?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val code = courseToDelete!!.code
+                    courseToDelete = null
+                    onDeleteCourse(code) { success ->
+                        scope.launch {
+                            snackbarHostState.showSnackbar(if (success) "Course deleted." else "Failed to delete.")
+                        }
+                    }
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { courseToDelete = null }) { Text("Cancel") } }
         )
-        return plainUsername to plainPassword
     }
 }
 
-private suspend fun importExcelData(context: Context, uri: Uri): Boolean {
+@Composable
+fun SavedCoursesSection(
+    onDeleteCourse: (CourseImport) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val savedCourses = AppRepository.courseImports
+
+    Card(
+        modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+    ) {
+        Column(modifier = androidx.compose.ui.Modifier.padding(12.dp)) {
+            Row(
+                modifier = androidx.compose.ui.Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Saved Courses (${savedCourses.size})",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Icon(
+                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null
+                )
+            }
+            if (expanded) {
+                Spacer(modifier = androidx.compose.ui.Modifier.height(8.dp))
+                if (savedCourses.isEmpty()) {
+                    Text("No saved courses.", color = Color.Gray, fontSize = 13.sp)
+                } else {
+                    savedCourses.forEach { course ->
+                        Row(
+                            modifier = androidx.compose.ui.Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = RoundedCornerShape(4.dp),
+                                modifier = androidx.compose.ui.Modifier.padding(end = 8.dp)
+                            ) {
+                                Text(
+                                    course.code,
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = androidx.compose.ui.Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                            Column(modifier = androidx.compose.ui.Modifier.weight(1f)) {
+                                Text(course.name, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                                Text(course.lecturer, fontSize = 11.sp, color = Color.Gray, maxLines = 1)
+                            }
+                            IconButton(onClick = { onDeleteCourse(course) }, modifier = androidx.compose.ui.Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Clear, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = androidx.compose.ui.Modifier.size(18.dp))
+                            }
+                        }
+                        HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private suspend fun importExcelData(context: Context, uri: Uri): List<CourseImport>? {
     return withContext(Dispatchers.IO) {
         try {
             val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
-            if (inputStream == null) return@withContext false
+            if (inputStream == null) return@withContext null
 
             val workbook = WorkbookFactory.create(inputStream)
             val sheet = workbook.getSheetAt(0)
@@ -309,17 +374,12 @@ private suspend fun importExcelData(context: Context, uri: Uri): Boolean {
                 }
             }
 
-            withContext(Dispatchers.Main) {
-                AppRepository.courseImports.clear()
-                AppRepository.courseImports.addAll(importedList)
-            }
-
             workbook.close()
             inputStream.close()
-            true
+            importedList
         } catch (e: Exception) {
             Log.e("ExcelImport", "Error: ${e.message}")
-            false
+            null
         }
     }
 }

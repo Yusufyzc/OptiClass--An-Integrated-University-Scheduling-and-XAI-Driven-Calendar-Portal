@@ -30,7 +30,12 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: String) {
+fun UpdateCalendarPage(
+    snackbarHostState: SnackbarHostState,
+    currentAdminUser: String,
+    onSaveSchedule: (username: String, draft: Map<String, SnapshotStateMap<String, CourseImport?>>) -> Unit = { _, _ -> },
+    onSendNotification: (recipientUsername: String, text: String) -> Unit = { _, _ -> }
+) {
     var expanded by remember { mutableStateOf(false) }
     var selectedUser by remember { mutableStateOf<User?>(null) }
     val instructors = AppRepository.users.filter { it.role == UserRole.INSTRUCTOR }
@@ -336,13 +341,8 @@ fun UpdateCalendarPage(snackbarHostState: SnackbarHostState, currentAdminUser: S
                         }
                         isDirty = false
                         selectedCourseToAssign = null
-                        AppRepository.notifications.add(
-                            AppNotification(
-                                id = System.currentTimeMillis().toString(),
-                                text = "Admin updated your weekly schedule. Please check 'My Schedule'.",
-                                recipientName = user.username
-                            )
-                        )
+                        onSaveSchedule(user.username, draftSchedule)
+                        onSendNotification(user.username, "Admin updated your weekly schedule. Please check 'My Schedule'.")
                         scope.launch { snackbarHostState.showSnackbar("Schedule updated and notification sent!") }
                     }
                 ) {

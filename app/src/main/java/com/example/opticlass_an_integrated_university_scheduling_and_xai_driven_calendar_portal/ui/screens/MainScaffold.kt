@@ -40,7 +40,8 @@ fun OptiClassApp(viewModel: AppViewModel) {
                 onLoadAllMessages = { cb -> viewModel.loadMessages(null) { cb() } },
                 onSendMessage = { to, content, cb -> viewModel.sendMessage(to, content, cb) },
                 onSubmitAvailability = { u, s, cb -> viewModel.submitAvailability(u, s, cb) },
-                onSaveSchedule = { u, d -> viewModel.saveSchedule(u, d) },
+                onSaveSchedule = { u, d, h -> viewModel.saveSchedule(u, d, h) },
+                onMarkNotificationRead = { id -> viewModel.markNotificationRead(id) },
                 onSendNotification = { r, t -> viewModel.sendNotification(r, t) },
                 onAddClassroom = { c, cb -> viewModel.addClassroom(c, cb) },
                 onDeleteClassroom = { id, cb -> viewModel.deleteClassroom(id, cb) },
@@ -67,7 +68,8 @@ fun MainScaffold(
     onLoadAllMessages: (() -> Unit) -> Unit = { _ -> },
     onSendMessage: (toUser: String, content: String, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     onSubmitAvailability: (username: String, slots: Map<String, Set<String>>, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
-    onSaveSchedule: (username: String, draft: Map<String, androidx.compose.runtime.snapshots.SnapshotStateMap<String, CourseImport?>>) -> Unit = { _, _ -> },
+    onSaveSchedule: (username: String, draft: Map<String, androidx.compose.runtime.snapshots.SnapshotStateMap<String, CourseImport?>>, historyEntries: List<ScheduleChange>) -> Unit = { _, _, _ -> },
+    onMarkNotificationRead: (id: String) -> Unit = { _ -> },
     onSendNotification: (recipientUsername: String, text: String) -> Unit = { _, _ -> },
     onAddClassroom: (Classroom, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
     onDeleteClassroom: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
@@ -206,8 +208,7 @@ fun MainScaffold(
                                                 },
                                                 onClick = {
                                                     showNotificationMenu = false
-                                                    val idx = AppRepository.notifications.indexOfFirst { it.id == notif.id }
-                                                    if (idx != -1) AppRepository.notifications[idx] = notif.copy(isRead = true)
+                                                    onMarkNotificationRead(notif.id)
                                                 }
                                             )
                                         }
@@ -269,7 +270,7 @@ fun MainScaffold(
                     currentDestination == AppDestinations.UPDATE_CALENDAR ->
                         UpdateCalendarPage(
                             snackbarHostState, userName,
-                            onSaveSchedule = onSaveSchedule,
+                            onSaveSchedule = { u, d, h -> onSaveSchedule(u, d, h) },
                             onSendNotification = onSendNotification
                         )
                     currentDestination == AppDestinations.CLASSROOMS ->

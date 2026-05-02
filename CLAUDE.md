@@ -68,9 +68,40 @@ ui/screens/
 - **Port:** `8000`
 - **Kullanıcı:** `vboxuser` (Ubuntu VM)
 - **DB:** PostgreSQL, veritabanı adı `opticlass`, kullanıcı `yusuf`
-- **Başlatma:** `cd ~/opticlass-api && source venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8000`
 - **API docs:** `http://192.168.1.8:8000/docs`
 - **IP değişirse:** VM'de `ip a` ile öğren → `network/RetrofitClient.kt` `BASE_URL` güncelle → rebuild
+
+---
+
+## Her Oturumda Sunucu Başlatma (Sırayla Yap)
+
+### 1. VirtualBox'ta VM'i Başlat
+VirtualBox'u aç → `OptiClass-Server` → **Start**
+
+### 2. SSH ile Bağlan (Windows CMD)
+```
+ssh vboxuser@192.168.1.8
+```
+> IP değiştiyse önce VM ekranında `ip a` yaz, yeni IP'yi al.
+
+### 3. API'yi Başlat (SSH terminalinde)
+```bash
+cd ~/opticlass-api && source venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+### 4. Çalıştığını Doğrula
+Tarayıcıda aç:
+```
+http://192.168.1.8:8000
+```
+`{"message":"OptiClass API Online!"}` görünüyorsa hazır.
+
+### main.py Güncellemesi Gerekirse
+Windows CMD'de (yeni pencere):
+```
+scp C:\Users\BERKAY\Desktop\main.py vboxuser@192.168.1.8:/home/vboxuser/opticlass-api/main.py
+```
+Sonra SSH'da uvicorn'u yeniden başlat (Ctrl+C → yukarıdaki komutu tekrar çalıştır).
 
 ---
 

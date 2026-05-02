@@ -9,6 +9,7 @@ import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.MessageDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.NotificationDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ScheduleDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ScheduleHistoryDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.UserDto
 
 object AppRepository {
@@ -31,7 +32,24 @@ object AppRepository {
                 role = if (dto.role == "ADMIN") UserRole.ADMIN else UserRole.INSTRUCTOR,
                 fullName = dto.fullName,
                 email = dto.email ?: "",
-                department = dto.department ?: ""
+                department = dto.department ?: "",
+                avatarUri = dto.avatarUrl
+            ))
+        }
+    }
+
+    fun syncHistory(dtos: List<ScheduleHistoryDto>) {
+        scheduleHistory.clear()
+        dtos.forEach { dto ->
+            scheduleHistory.add(ScheduleChange(
+                changedBy = dto.changedBy,
+                timestamp = dto.changedAt ?: System.currentTimeMillis(),
+                instructorUsername = dto.instructorUsername,
+                instructorFullName = dto.instructorFullName,
+                day = dto.day,
+                timeSlot = dto.timeSlot,
+                previousCourse = dto.previousCourseCode?.let { CourseImport(code = it, name = "", lecturer = "", department = "", email = "") },
+                newCourse = dto.newCourseCode?.let { CourseImport(code = it, name = "", lecturer = "", department = "", email = "") }
             ))
         }
     }

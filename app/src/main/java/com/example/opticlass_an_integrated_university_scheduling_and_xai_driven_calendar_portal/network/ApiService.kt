@@ -132,6 +132,12 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Body body: NotificationDto
     ): Response<Unit>
+
+    @PATCH("notifications/{id}/read")
+    suspend fun markNotificationRead(
+        @Header("Authorization") token: String,
+        @Path("id") id: String
+    ): Response<Unit>
 }
 
 data class LoginRequest(val username: String, val passwordHash: String)
@@ -148,7 +154,8 @@ data class UserDto(
     val role: String,
     val fullName: String,
     val email: String?,
-    val department: String?
+    val department: String?,
+    val avatarUrl: String? = null
 )
 
 data class UserCreateDto(
@@ -200,7 +207,8 @@ data class ScheduleHistoryDto(
     val day: String,
     val timeSlot: String,
     val previousCourseCode: String?,
-    val newCourseCode: String?
+    val newCourseCode: String?,
+    val changedAt: Long? = null
 )
 
 data class MessageDto(

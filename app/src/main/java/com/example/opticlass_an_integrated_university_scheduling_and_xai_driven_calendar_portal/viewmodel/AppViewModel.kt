@@ -19,6 +19,7 @@ import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.NotificationDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.RetrofitClient
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ScheduleDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ScheduleHistoryDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.UserCreateDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.UserUpdateDto
 import kotlinx.coroutines.launch
@@ -124,6 +125,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
                 val notifResponse = RetrofitClient.instance.getNotifications(authToken)
                 if (notifResponse.isSuccessful) AppRepository.syncNotifications(notifResponse.body() ?: emptyList())
+
+                val historyResponse = RetrofitClient.instance.getHistory(authToken)
+                if (historyResponse.isSuccessful) AppRepository.syncHistory(historyResponse.body() ?: emptyList())
             } catch (e: Exception) {
                 Log.e("AppViewModel", "Fetch data error", e)
             }
@@ -350,7 +354,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun saveSchedule(username: String, draftSchedule: Map<String, SnapshotStateMap<String, CourseImport?>>) {
+    fun saveSchedule(username: String, draftSchedule: Map<String, SnapshotStateMap<String, CourseImport?>>, historyEntries: List<ScheduleChange> = emptyList()) {
         viewModelScope.launch {
             try {
                 val flatSlots = mutableMapOf<String, CourseDto?>()
@@ -367,7 +371,34 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 RetrofitClient.instance.updateSchedule(authToken, username, ScheduleDto(username, flatSlots))
+
+                historyEntries.forEach { entry ->
+                    try {
+                        RetrofitClient.instance.addHistory(
+                            token = authToken,
+                            body = ScheduleHistoryDto(
+                                changedBy = entry.changedBy,
+                                instructorUsername = entry.instructorUsername,
+                                instructorFullName = entry.instructorFullName,
+                                day = entry.day,
+                                timeSlot = entry.timeSlot,
+                                previousCourseCode = entry.previousCourse?.code,
+                                newCourseCode = entry.newCourse?.code
+                            )
+                        )
+                    } catch (e: Exception) { Log.e("AppViewModel", "Add history error", e) }
+                }
             } catch (e: Exception) { Log.e("AppViewModel", "Save schedule error", e) }
+        }
+    }
+
+    fun markNotificationRead(id: String) {
+        viewModelScope.launch {
+            try {
+                RetrofitClient.instance.markNotificationRead(authToken, id)
+                val idx = AppRepository.notifications.indexOfFirst { it.id == id }
+                if (idx != -1) AppRepository.notifications[idx] = AppRepository.notifications[idx].copy(isRead = true)
+            } catch (e: Exception) { Log.e("AppViewModel", "Mark notification read error", e) }
         }
     }
 

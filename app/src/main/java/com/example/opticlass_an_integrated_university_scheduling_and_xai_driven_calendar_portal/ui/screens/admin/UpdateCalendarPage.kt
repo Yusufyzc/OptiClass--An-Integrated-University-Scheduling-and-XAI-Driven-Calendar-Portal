@@ -33,7 +33,7 @@ import java.util.Locale
 fun UpdateCalendarPage(
     snackbarHostState: SnackbarHostState,
     currentAdminUser: String,
-    onSaveSchedule: (username: String, draft: Map<String, SnapshotStateMap<String, CourseImport?>>) -> Unit = { _, _ -> },
+    onSaveSchedule: (username: String, draft: Map<String, SnapshotStateMap<String, CourseImport?>>, historyEntries: List<ScheduleChange>) -> Unit = { _, _, _ -> },
     onSendNotification: (recipientUsername: String, text: String) -> Unit = { _, _ -> }
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -180,8 +180,14 @@ fun UpdateCalendarPage(
                     availableSlots[reqDay]?.contains(s) != true
                 }
                 val classroomConflict = selectedClassroom != null && validSlots.any { s ->
-                    AppRepository.users.any { u ->
+                    AppRepository.users.filter { it.username != user.username }.any { u ->
                         u.schedule[reqDay]?.get(s)?.classroomId == selectedClassroom!!.id
+                    }
+                }
+
+                fun isClassroomOccupied(room: Classroom): Boolean = validSlots.any { s ->
+                    AppRepository.users.filter { it.username != user.username }.any { u ->
+                        u.schedule[reqDay]?.get(s)?.classroomId == room.id
                     }
                 }
 
@@ -228,8 +234,21 @@ fun UpdateCalendarPage(
                                         onClick = { selectedClassroom = null; classroomDropdownExpanded = false }
                                     )
                                     AppRepository.classrooms.forEach { room ->
+                                        val occupied = isClassroomOccupied(room)
                                         DropdownMenuItem(
-                                            text = { Text(room.roomCode) },
+                                            text = {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        room.roomCode,
+                                                        color = if (occupied) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) else Color.Unspecified
+                                                    )
+                                                    if (occupied) {
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("(occupied)", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                                                    }
+                                                }
+                                            },
+                                            enabled = !occupied,
                                             onClick = { selectedClassroom = room; classroomDropdownExpanded = false }
                                         )
                                     }
@@ -312,24 +331,24 @@ fun UpdateCalendarPage(
                 Button(
                     onClick = {
                         val now = System.currentTimeMillis()
+                        val historyEntries = mutableListOf<ScheduleChange>()
                         DAYS.forEach { day ->
                             TIME_SLOTS.forEach { slot ->
                                 val prev = user.schedule[day]?.get(slot)
                                 val next = draftSchedule[day]?.get(slot)
                                 if (prev?.code != next?.code) {
-                                    AppRepository.scheduleHistory.add(
-                                        0,
-                                        ScheduleChange(
-                                            changedBy = currentAdminUser,
-                                            timestamp = now,
-                                            instructorUsername = user.username,
-                                            instructorFullName = user.fullName,
-                                            day = day,
-                                            timeSlot = slot,
-                                            previousCourse = prev,
-                                            newCourse = next
-                                        )
+                                    val entry = ScheduleChange(
+                                        changedBy = currentAdminUser,
+                                        timestamp = now,
+                                        instructorUsername = user.username,
+                                        instructorFullName = user.fullName,
+                                        day = day,
+                                        timeSlot = slot,
+                                        previousCourse = prev,
+                                        newCourse = next
                                     )
+                                    historyEntries.add(entry)
+                                    AppRepository.scheduleHistory.add(0, entry)
                                 }
                             }
                         }
@@ -341,7 +360,7 @@ fun UpdateCalendarPage(
                         }
                         isDirty = false
                         selectedCourseToAssign = null
-                        onSaveSchedule(user.username, draftSchedule)
+                        onSaveSchedule(user.username, draftSchedule, historyEntries)
                         onSendNotification(user.username, "Admin updated your weekly schedule. Please check 'My Schedule'.")
                         scope.launch { snackbarHostState.showSnackbar("Schedule updated and notification sent!") }
                     }

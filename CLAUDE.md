@@ -43,7 +43,7 @@ ui/screens/
     MyLecturesPage.kt
     MyAvailabilityPage.kt        ← availability submit API'ye bağlı
   common/
-    SettingsPage.kt              ← ChangePasswordDialog API'ye bağlı
+    SettingsPage.kt              ← ChangePasswordDialog + avatar upload API'ye bağlı
     ChatBox.kt                   ← mesaj yükleme/gönderme API'ye bağlı (5sn polling)
     GenericPage.kt
 ```
@@ -56,6 +56,7 @@ ui/screens/
 - **State:** `mutableStateListOf` / `mutableStateMapOf` (SnapshotState)
 - **Excel import:** Apache POI (`poi`, `poi-ooxml`)
 - **Şifre:** SHA-256 hash
+- **Image loading:** Coil (`coil-compose:2.6.0`) — remote http:// URL + data: base64 destekli
 - **Backend:** Ubuntu VM (VirtualBox, Bridge mode), FastAPI (Python), PostgreSQL
 - **Network:** Retrofit + OkHttp + Gson; `ApiService.kt` tüm endpoint'leri tanımlar
 - **Auth:** JWT token — login'de alınır, `AppViewModel.authToken`'da `"Bearer xxx"` formatında tutulur
@@ -141,13 +142,14 @@ data class ScheduleChange(changedBy, timestamp, instructorUsername, instructorFu
 ## AppRepository Sync Metodları
 
 ```kotlin
-syncUsers(List<UserDto>)           // users listesini replace eder
+syncUsers(List<UserDto>)           // users listesini replace eder (avatarUri dahil)
 syncClassrooms(List<ClassroomDto>) // classrooms listesini replace eder
 syncCourses(List<CourseDto>)       // courseImports + her user.courses'u günceller
 syncSchedule(username, flatSlots)  // tek instructor'ın user.schedule'ını günceller
                                    // flatSlots key formatı: "Mon_08:00 AM"
 syncAvailabilities(List<AvailabilityDto>) // availabilities listesini replace eder
 syncNotifications(List<NotificationDto>)  // notifications listesini replace eder
+syncHistory(List<ScheduleHistoryDto>)     // scheduleHistory listesini replace eder (DB'den)
 syncMessages(dtos, withUser)       // belirli konuşmayı replace eder
 syncAllMessages(dtos)              // tüm messages'ı replace eder
 markMessageRead(timestamp)         // lokal okundu işareti (sunucuya gitmiyor)
@@ -180,7 +182,7 @@ deleteClassroom(id, onResult)
 importClassrooms(classrooms, onResult)
 
 // Schedule
-saveSchedule(username, draftSchedule)  // PUT /schedules/{username}
+saveSchedule(username, draftSchedule, historyEntries)  // PUT /schedules/{username} + POST /history
 
 // Availability
 submitAvailability(username, slots, onResult)  // PUT /availabilities/{username}
@@ -192,9 +194,13 @@ sendMessage(toUser, content, onResult)
 // Notifications
 sendNotification(recipientUsername, text)
 refreshNotifications()
+markNotificationRead(id)           // PATCH /notifications/{id}/read
+
+// Avatar
+updateAvatar(username, dataUrl, onResult)  // PUT /users/{username}/avatar
 
 // fetchInitialData (login/restore sonrası otomatik çağrılır):
-//   users, classrooms, courses, schedules, availabilities, notifications yüklenir
+//   users, classrooms, courses, schedules, availabilities, notifications, history yüklenir
 ```
 
 ---
@@ -213,7 +219,7 @@ API'ye gönderilirken flat map'e çevrilir:
 ## Callback Zinciri (MainScaffold)
 
 Tüm API callback'leri `OptiClassApp → MainScaffold → ilgili ekran` zincirine geçilir.
-`MainScaffold` parametreleri: `onChangePassword`, `onAddUser`, `onDeleteUser`, `onUpdateUser`, `onResetPassword`, `onImportCourses`, `onDeleteCourse`, `onLoadMessages`, `onLoadAllMessages`, `onSendMessage`, `onSubmitAvailability`, `onSaveSchedule`, `onSendNotification`, `onAddClassroom`, `onDeleteClassroom`, `onImportClassrooms`
+`MainScaffold` parametreleri: `onChangePassword`, `onAddUser`, `onDeleteUser`, `onUpdateUser`, `onResetPassword`, `onImportCourses`, `onDeleteCourse`, `onLoadMessages`, `onLoadAllMessages`, `onSendMessage`, `onSubmitAvailability`, `onSaveSchedule`, `onSendNotification`, `onAddClassroom`, `onDeleteClassroom`, `onImportClassrooms`, `onMarkNotificationRead`, `onUpdateAvatar`
 
 ---
 
@@ -243,6 +249,9 @@ Bu listeleri asla inline olarak tekrar yazma.
 - **DataImportPage preview:** Yerel `previewList` state kullanır (AppRepository.courseImports değil).
 - **Mesaj polling:** ChatBox açıkken 5sn'de bir GET /messages — normal davranış.
 - **Okundu takibi:** `AppRepository.localReadTimestamps` set'i ile tutulur, polling'de üzerine yazılmaz.
+- **Avatar:** `data:image/jpeg;base64,...` formatında DB'de saklanır. Settings'te fotoğraf seçilince max 256px + JPEG %70 ile encode edilip `PUT /users/{username}/avatar` ile kaydedilir. `UserAvatar` bileşeni sırasıyla: http:// → Coil, data: → base64 decode, content:// → contentResolver.
+- **classroomConflict:** Sadece DİĞER instructor'ların kaydedilmiş programlarına bakar (mevcut instructor hariç tutulur). Kaydedilmemiş draft'lar arası cross-instructor çakışma tespit edilmez — bilinen limitation.
+- **`onSaveSchedule` imzası:** `(username, draft, historyEntries: List<ScheduleChange>)` — history girişleri ViewModel'de API'ye POST edilir.
 
 ---
 
@@ -256,14 +265,21 @@ Bu listeleri asla inline olarak tekrar yazma.
 - Schedule kaydetme (UpdateCalendar) + açılışta yükleme
 - Availability gönderme + açılışta yükleme
 - Mesajlaşma (ChatBox) + polling + okundu takibi
-- Bildirim gönderme + açılışta yükleme
+- Bildirim gönderme + mark-as-read + açılışta yükleme
 - Şifre değiştirme (Settings + ForceChange)
+- Schedule history DB'ye kaydetme (`POST /history`) + açılışta yükleme
+- Avatar upload (Settings) → base64 encode → `PUT /users/{username}/avatar` → DB
 
-### ❌ Yapılacak / Eksik
-1. **History** — `GET /history` + `POST /history` (takvim değişiklik geçmişi DB'ye gitmiyor)
-2. **Notification mark-as-read** — API endpoint yok, sadece lokal işaretleniyor
-3. **Schedule History** — `AppRepository.scheduleHistory` in-memory, DB'ye gitmiyor
-4. **Avatar** — kullanıcı fotoğrafı in-memory, DB'de `avatar_url` sütunu var ama bağlanmadı
+### ⚠️ Yapılacak / Ertelenen
+1. **XAI — Schedule Suggestion** — `POST /schedule/suggest/{username}` endpoint + UpdateCalendar'da "Suggest" butonu (ertelendi)
+2. **Cross-instructor draft classroom conflict** — kaydedilmemiş iki instructor draft'ı arasında sınıf çakışması tespit edilemiyor (bilinen limitation, global state gerektirir)
+
+### 🔧 Deployment Notu
+`avatar_url` kolonu DB'de var mı kontrol et:
+```bash
+psql -U yusuf opticlass -c "\d users"
+```
+Yoksa: `ALTER TABLE users ADD COLUMN avatar_url TEXT;`
 
 ---
 
@@ -277,6 +293,7 @@ implementation("com.squareup.retrofit2:retrofit:2.11.0")
 implementation("com.squareup.retrofit2:converter-gson:2.11.0")
 implementation("com.squareup.okhttp3:okhttp:4.12.0")
 implementation("androidx.security.crypto:security-crypto:...")
+implementation("io.coil-kt:coil-compose:2.6.0")
 // Firebase KULLANILMIYOR — backend Ubuntu VM + FastAPI + PostgreSQL
 ```
 

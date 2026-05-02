@@ -1,5 +1,7 @@
 package com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal
 
+import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -15,22 +17,53 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
-fun SettingsPage(userName: String, onChangePassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> }) {
+fun SettingsPage(
+    userName: String,
+    onChangePassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> },
+    onUpdateAvatar: (dataUrl: String, onResult: (Boolean) -> Unit) -> Unit = { _, _ -> }
+) {
     val user = AppRepository.users.find { it.username == userName }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            val index = AppRepository.users.indexOfFirst { it.username == userName }
-            if (index != -1) AppRepository.users[index] = AppRepository.users[index].copy(avatarUri = uri.toString())
+            scope.launch {
+                val dataUrl = withContext(Dispatchers.IO) {
+                    try {
+                        val stream = context.contentResolver.openInputStream(uri) ?: return@withContext null
+                        val original = BitmapFactory.decodeStream(stream)
+                        stream.close()
+                        val maxDim = 256
+                        val ratio = maxDim.toFloat() / maxOf(original.width, original.height)
+                        val scaled = if (ratio < 1f)
+                            android.graphics.Bitmap.createScaledBitmap(
+                                original,
+                                (original.width * ratio).toInt(),
+                                (original.height * ratio).toInt(),
+                                true
+                            ) else original
+                        val baos = ByteArrayOutputStream()
+                        scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, baos)
+                        "data:image/jpeg;base64," + Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+                    } catch (e: Exception) { null }
+                }
+                if (dataUrl != null) onUpdateAvatar(dataUrl) {}
+            }
         }
     }
 

@@ -2,6 +2,7 @@ package com.example.opticlass_an_integrated_university_scheduling_and_xai_driven
 
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -57,8 +58,14 @@ fun UserAvatar(
                 val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = avatarUri) {
                     value = withContext(Dispatchers.IO) {
                         try {
-                            context.contentResolver.openInputStream(Uri.parse(avatarUri))?.use { stream ->
-                                BitmapFactory.decodeStream(stream)
+                            if (avatarUri.startsWith("data:")) {
+                                val base64 = avatarUri.substringAfter(",")
+                                val bytes = Base64.decode(base64, Base64.DEFAULT)
+                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            } else {
+                                context.contentResolver.openInputStream(Uri.parse(avatarUri))?.use { stream ->
+                                    BitmapFactory.decodeStream(stream)
+                                }
                             }
                         } catch (e: Exception) { null }
                     }

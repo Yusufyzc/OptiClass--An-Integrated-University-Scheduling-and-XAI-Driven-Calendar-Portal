@@ -37,6 +37,13 @@ interface ApiService {
         @Body request: ChangePasswordRequest
     ): Response<Unit>
 
+    @PUT("users/{username}/avatar")
+    suspend fun updateAvatar(
+        @Header("Authorization") token: String,
+        @Path("username") username: String,
+        @Body body: AvatarUpdateDto
+    ): Response<Unit>
+
     @PUT("users/{username}/reset-password")
     suspend fun adminResetPassword(
         @Header("Authorization") token: String,
@@ -177,6 +184,8 @@ data class UserUpdateDto(
 data class ChangePasswordRequest(val currentPasswordHash: String, val newPasswordHash: String)
 
 data class AdminResetPasswordRequest(val newPasswordHash: String)
+
+data class AvatarUpdateDto(val avatarUrl: String)
 
 data class ClassroomDto(val id: String, val roomCode: String, val capacity: Int)
 

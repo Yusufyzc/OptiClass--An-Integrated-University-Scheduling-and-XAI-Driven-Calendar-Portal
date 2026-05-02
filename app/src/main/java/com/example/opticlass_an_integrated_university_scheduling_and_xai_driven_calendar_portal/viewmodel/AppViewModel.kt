@@ -12,6 +12,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.AdminResetPasswordRequest
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.AvatarUpdateDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.AvailabilityDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.CourseDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.LoginRequest
@@ -389,6 +390,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     } catch (e: Exception) { Log.e("AppViewModel", "Add history error", e) }
                 }
             } catch (e: Exception) { Log.e("AppViewModel", "Save schedule error", e) }
+        }
+    }
+
+    fun updateAvatar(username: String, dataUrl: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.updateAvatar(
+                    token = authToken,
+                    username = username,
+                    body = AvatarUpdateDto(avatarUrl = dataUrl)
+                )
+                if (response.isSuccessful) {
+                    val idx = AppRepository.users.indexOfFirst { it.username == username }
+                    if (idx != -1) AppRepository.users[idx] = AppRepository.users[idx].copy(avatarUri = dataUrl)
+                    onResult(true)
+                } else onResult(false)
+            } catch (e: Exception) {
+                Log.e("AppViewModel", "Update avatar error", e)
+                onResult(false)
+            }
         }
     }
 

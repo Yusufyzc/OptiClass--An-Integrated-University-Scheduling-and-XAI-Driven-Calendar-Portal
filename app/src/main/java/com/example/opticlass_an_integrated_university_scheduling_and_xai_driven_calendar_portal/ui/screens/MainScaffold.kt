@@ -42,6 +42,7 @@ fun OptiClassApp(viewModel: AppViewModel) {
                 onSubmitAvailability = { u, s, cb -> viewModel.submitAvailability(u, s, cb) },
                 onSaveSchedule = { u, d, h -> viewModel.saveSchedule(u, d, h) },
                 onMarkNotificationRead = { id -> viewModel.markNotificationRead(id) },
+                onUpdateAvatar = { dataUrl, cb -> viewModel.updateAvatar(viewModel.currentUserName, dataUrl, cb) },
                 onSendNotification = { r, t -> viewModel.sendNotification(r, t) },
                 onAddClassroom = { c, cb -> viewModel.addClassroom(c, cb) },
                 onDeleteClassroom = { id, cb -> viewModel.deleteClassroom(id, cb) },
@@ -70,6 +71,7 @@ fun MainScaffold(
     onSubmitAvailability: (username: String, slots: Map<String, Set<String>>, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     onSaveSchedule: (username: String, draft: Map<String, androidx.compose.runtime.snapshots.SnapshotStateMap<String, CourseImport?>>, historyEntries: List<ScheduleChange>) -> Unit = { _, _, _ -> },
     onMarkNotificationRead: (id: String) -> Unit = { _ -> },
+    onUpdateAvatar: (dataUrl: String, onResult: (Boolean) -> Unit) -> Unit = { _, _ -> },
     onSendNotification: (recipientUsername: String, text: String) -> Unit = { _, _ -> },
     onAddClassroom: (Classroom, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
     onDeleteClassroom: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
@@ -281,7 +283,7 @@ fun MainScaffold(
                             onImportClassrooms = onImportClassrooms
                         )
                     currentDestination == AppDestinations.SETTINGS ->
-                        SettingsPage(userName, onChangePassword = onChangePassword)
+                        SettingsPage(userName, onChangePassword = onChangePassword, onUpdateAvatar = onUpdateAvatar)
                     else -> GenericPage(currentDestination.label)
                 }
             }

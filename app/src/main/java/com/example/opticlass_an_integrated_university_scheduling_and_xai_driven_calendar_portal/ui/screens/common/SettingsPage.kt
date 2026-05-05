@@ -103,7 +103,7 @@ fun SettingsPage(
                         Spacer(Modifier.width(16.dp))
                         Column {
                             Text(user.fullName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                            Text("@${decodeUsername(user.username)}", fontSize = 13.sp, color = Color.Gray)
+                            Text("@${user.username}", fontSize = 13.sp, color = Color.Gray)
                             val dept = user.department.ifBlank { user.courses.firstOrNull()?.department.orEmpty() }
                             if (dept.isNotBlank()) {
                                 Text(dept, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

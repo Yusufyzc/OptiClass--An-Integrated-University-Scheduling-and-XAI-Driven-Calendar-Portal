@@ -63,14 +63,15 @@ fun MySchedulePage(userName: String) {
                                         ),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    if (!isContinuation && course != null) {
+                                    if (course != null) {
                                         val roomCode = course.classroomId?.let { id ->
                                             AppRepository.classrooms.find { it.id == id }?.roomCode
                                         }
+                                        val alpha = if (isContinuation) 0.6f else 1f
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Text(course.code, fontSize = 10.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                                            Text(course.code, fontSize = 10.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = alpha))
                                             if (roomCode != null) {
-                                                Text(roomCode, fontSize = 8.sp, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f), textAlign = TextAlign.Center)
+                                                Text(roomCode, fontSize = 8.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = alpha * 0.7f), textAlign = TextAlign.Center)
                                             }
                                         }
                                     }

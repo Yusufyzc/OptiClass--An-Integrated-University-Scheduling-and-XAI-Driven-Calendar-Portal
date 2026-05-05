@@ -27,7 +27,9 @@ fun MyAvailabilityPage(
 ) {
     val scope = rememberCoroutineScope()
 
-    val initialDraft = AppRepository.availabilityDrafts[instructorName] ?: emptyMap()
+    val initialDraft = AppRepository.availabilityDrafts[instructorName]
+        ?: AppRepository.availabilities.find { it.instructorName == instructorName }?.slots
+        ?: emptyMap()
     val selectedSlots = remember {
         val map = mutableStateMapOf<String, MutableSet<String>>()
         DAYS.forEach { day -> map[day] = initialDraft[day]?.toMutableSet() ?: mutableSetOf() }
@@ -46,19 +48,16 @@ fun MyAvailabilityPage(
         )
 
         Spacer(modifier = Modifier.height(16.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Button(onClick = {
-                AppRepository.availabilityDrafts[instructorName] = selectedSlots.mapValues { it.value.toSet() }
-                scope.launch { snackbarHostState.showSnackbar("Draft saved.") }
-            }) { Text("Save Changes") }
-            Button(onClick = {
+        Button(
+            onClick = {
                 val slots = selectedSlots.mapValues { it.value.toSet() }
                 AppRepository.availabilityDrafts[instructorName] = slots
                 onSubmitAvailability(instructorName, slots) { _ -> }
                 onSendMessage("admin", "I have submitted my availability. Please review it.") { _ -> }
                 scope.launch { snackbarHostState.showSnackbar("Availability sent to admin!") }
-            }) { Text("Send to Admin") }
-        }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Save & Send to Admin") }
     }
 }
 

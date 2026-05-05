@@ -22,7 +22,8 @@ fun AdminMainPage(
     adminName: String,
     onLoadMessages: (withUser: String, () -> Unit) -> Unit = { _, _ -> },
     onLoadAllMessages: (() -> Unit) -> Unit = { _ -> },
-    onSendMessage: (toUser: String, content: String, (Boolean) -> Unit) -> Unit = { _, _, _ -> }
+    onSendMessage: (toUser: String, content: String, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onMarkMessagesRead: (sender: String) -> Unit = { _ -> }
 ) {
     var selectedUser by remember { mutableStateOf<String?>(null) }
     var showNewChatDialog by remember { mutableStateOf(false) }
@@ -132,8 +133,6 @@ fun AdminMainPage(
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
-                                        } else {
-                                            Text("@${decodeUsername(user)}", fontSize = 12.sp, color = Color.Gray)
                                         }
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
@@ -236,10 +235,7 @@ fun AdminMainPage(
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Column(modifier = Modifier.fillMaxWidth()) {
-                                        Text(instructor.fullName, fontWeight = FontWeight.Medium)
-                                        Text("@${decodeUsername(instructor.username)}", fontSize = 12.sp, color = Color.Gray)
-                                    }
+                                    Text(instructor.fullName, fontWeight = FontWeight.Medium, modifier = Modifier.fillMaxWidth())
                                 }
                             }
                         }
@@ -257,7 +253,8 @@ fun AdminMainPage(
                 currentUserName = adminName,
                 targetUserName = selectedUser!!,
                 onLoadMessages = onLoadMessages,
-                onSendMessage = onSendMessage
+                onSendMessage = onSendMessage,
+                onMarkMessagesRead = onMarkMessagesRead
             )
         }
     }

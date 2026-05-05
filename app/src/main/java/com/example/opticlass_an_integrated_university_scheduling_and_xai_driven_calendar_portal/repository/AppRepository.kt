@@ -67,6 +67,12 @@ object AppRepository {
         if (idx != -1) messages[idx] = messages[idx].copy(isRead = true)
     }
 
+    fun markAllMessagesReadFrom(sender: String) {
+        messages.indices
+            .filter { messages[it].sender == sender && !messages[it].isRead }
+            .forEach { messages[it] = messages[it].copy(isRead = true) }
+    }
+
     fun syncMessages(messageDtos: List<MessageDto>, withUser: String) {
         messages.removeAll { m -> (m.sender == withUser || m.recipient == withUser) }
         messageDtos.forEach { dto ->

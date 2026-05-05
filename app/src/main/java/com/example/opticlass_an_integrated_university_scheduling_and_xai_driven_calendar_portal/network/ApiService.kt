@@ -131,6 +131,12 @@ interface ApiService {
         @Body body: MessageDto
     ): Response<MessageDto>
 
+    @PATCH("messages/mark-read")
+    suspend fun markMessagesRead(
+        @Header("Authorization") token: String,
+        @Query("sender") sender: String
+    ): Response<Unit>
+
     @GET("notifications")
     suspend fun getNotifications(@Header("Authorization") token: String): Response<List<NotificationDto>>
 

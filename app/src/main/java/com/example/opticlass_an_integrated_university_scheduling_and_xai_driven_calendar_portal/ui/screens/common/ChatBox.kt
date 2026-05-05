@@ -20,14 +20,17 @@ fun ChatBox(
     currentUserName: String,
     targetUserName: String,
     onLoadMessages: (withUser: String, () -> Unit) -> Unit = { _, _ -> },
-    onSendMessage: (toUser: String, content: String, (Boolean) -> Unit) -> Unit = { _, _, _ -> }
+    onSendMessage: (toUser: String, content: String, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onMarkMessagesRead: (sender: String) -> Unit = { _ -> }
 ) {
     var text by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     var isSending by remember { mutableStateOf(false) }
 
     LaunchedEffect(targetUserName) {
-        onLoadMessages(targetUserName) {}
+        onLoadMessages(targetUserName) {
+            onMarkMessagesRead(targetUserName)
+        }
     }
 
     LaunchedEffect(targetUserName) {
@@ -55,7 +58,8 @@ fun ChatBox(
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Chat with ${decodeUsername(targetUserName)}", style = MaterialTheme.typography.titleLarge)
+        val targetFullName = AppRepository.users.find { it.username == targetUserName }?.fullName ?: targetUserName
+        Text("Chat with $targetFullName", style = MaterialTheme.typography.titleLarge)
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f).padding(vertical = 8.dp)

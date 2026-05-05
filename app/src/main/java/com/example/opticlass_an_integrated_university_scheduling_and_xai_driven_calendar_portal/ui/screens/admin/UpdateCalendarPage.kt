@@ -522,13 +522,29 @@ fun SchedulingGridEnhanced(
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (isContinuation) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth(0.5f)
-                                            .height(3.dp)
-                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-                                    )
+                                    val roomCode = scheduledCourse!!.classroomId?.let { id ->
+                                        AppRepository.classrooms.find { it.id == id }?.roomCode
+                                    }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            scheduledCourse.code,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                        )
+                                        if (roomCode != null) {
+                                            Text(
+                                                roomCode,
+                                                fontSize = 7.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
+                                            )
+                                        }
+                                    }
                                 } else if (scheduledCourse != null) {
+                                    val roomCode = scheduledCourse.classroomId?.let { id ->
+                                        AppRepository.classrooms.find { it.id == id }?.roomCode
+                                    }
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text(
                                             scheduledCourse.code,
@@ -536,6 +552,14 @@ fun SchedulingGridEnhanced(
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onPrimaryContainer
                                         )
+                                        if (roomCode != null) {
+                                            Text(
+                                                roomCode,
+                                                fontSize = 7.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                            )
+                                        }
                                         IconButton(
                                             onClick = {
                                                 val slotIndex = timeSlots.indexOf(slot)

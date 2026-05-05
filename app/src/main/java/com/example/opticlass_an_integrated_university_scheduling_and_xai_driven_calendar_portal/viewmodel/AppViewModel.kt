@@ -177,6 +177,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val courseResponse = RetrofitClient.instance.getCourses(authToken)
                 if (courseResponse.isSuccessful) AppRepository.syncCourses(courseResponse.body() ?: emptyList())
 
+                val scheduleResponse = RetrofitClient.instance.getAllSchedules(authToken)
+                if (scheduleResponse.isSuccessful) {
+                    scheduleResponse.body()?.forEach { dto ->
+                        AppRepository.syncSchedule(dto.instructorUsername, dto.slots)
+                    }
+                }
+
                 onResult(newCredentials)
             } catch (e: Exception) {
                 Log.e("AppViewModel", "Import error", e)
@@ -450,12 +457,47 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshAvailabilities() {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.getAllAvailabilities(authToken)
+                if (response.isSuccessful) AppRepository.syncAvailabilities(response.body() ?: emptyList())
+            } catch (e: Exception) { Log.e("AppViewModel", "Refresh availabilities error", e) }
+        }
+    }
+
     fun refreshNotifications() {
         viewModelScope.launch {
             try {
                 val response = RetrofitClient.instance.getNotifications(authToken)
                 if (response.isSuccessful) AppRepository.syncNotifications(response.body() ?: emptyList())
             } catch (e: Exception) { Log.e("AppViewModel", "Refresh notifications error", e) }
+        }
+    }
+
+    fun refreshInstructorData() {
+        viewModelScope.launch {
+            try {
+                val notifResponse = RetrofitClient.instance.getNotifications(authToken)
+                if (notifResponse.isSuccessful) AppRepository.syncNotifications(notifResponse.body() ?: emptyList())
+                val scheduleResponse = RetrofitClient.instance.getAllSchedules(authToken)
+                if (scheduleResponse.isSuccessful) {
+                    scheduleResponse.body()?.forEach { dto ->
+                        AppRepository.syncSchedule(dto.instructorUsername, dto.slots)
+                    }
+                }
+                val msgResponse = RetrofitClient.instance.getMessages(token = authToken, otherUsername = "admin")
+                if (msgResponse.isSuccessful) AppRepository.syncMessages(msgResponse.body() ?: emptyList(), "admin")
+            } catch (e: Exception) { Log.e("AppViewModel", "Refresh instructor data error", e) }
+        }
+    }
+
+    fun markMessagesRead(sender: String) {
+        AppRepository.markAllMessagesReadFrom(sender)
+        viewModelScope.launch {
+            try {
+                RetrofitClient.instance.markMessagesRead(authToken, sender)
+            } catch (e: Exception) { Log.e("AppViewModel", "Mark messages read error", e) }
         }
     }
 

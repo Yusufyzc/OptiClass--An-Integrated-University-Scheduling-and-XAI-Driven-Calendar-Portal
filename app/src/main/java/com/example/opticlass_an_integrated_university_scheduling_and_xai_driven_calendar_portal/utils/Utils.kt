@@ -1,6 +1,5 @@
 package com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal
 
-import android.util.Base64
 import androidx.compose.ui.graphics.Color
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
@@ -23,12 +22,6 @@ fun sha256(input: String): String {
 fun isValidEmail(email: String): Boolean =
     email.isNotBlank() && android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
 
-fun encodeUsername(plain: String): String =
-    Base64.encodeToString(plain.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-
-fun decodeUsername(encoded: String): String =
-    try { String(Base64.decode(encoded, Base64.NO_WRAP), Charsets.UTF_8) }
-    catch (e: Exception) { encoded }
 
 private val ACADEMIC_TITLES = setOf(
     "prof.", "dr.", "doç.", "yrd.", "öğr.", "gör.", "arş.",
@@ -57,7 +50,7 @@ fun generateUsername(fullName: String): String {
         else -> "user"
     }
 
-    val allUsernames = AppRepository.users.map { decodeUsername(it.username) }
+    val allUsernames = AppRepository.users.map { it.username }
     if (base !in allUsernames) return base
     var i = 2
     while ("${base}_$i" in allUsernames) i++

@@ -58,7 +58,7 @@ fun UserTransactionsPage(
                         Spacer(Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(user.fullName, fontWeight = FontWeight.Bold)
-                            Text("@${decodeUsername(user.username)} · ${user.role.name}", fontSize = 12.sp, color = Color.Gray)
+                            Text("@${user.username} · ${user.role.name}", fontSize = 12.sp, color = Color.Gray)
                             if (user.email.isNotBlank()) {
                                 Text(user.email, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
                             }
@@ -66,8 +66,8 @@ fun UserTransactionsPage(
                         IconButton(onClick = { userToEdit = user }) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary)
                         }
-                        val canDelete = decodeUsername(user.username) != "admin" &&
-                            (user.role != UserRole.ADMIN || decodeUsername(currentUserName) == "admin")
+                        val canDelete = user.username != "admin" &&
+                            (user.role != UserRole.ADMIN || currentUserName == "admin")
                         if (canDelete) {
                             IconButton(onClick = { userToDelete = user }) {
                                 Icon(Icons.Default.Clear, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
@@ -271,7 +271,7 @@ fun EditUserDialog(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     UserAvatar(fullName = user.fullName, username = user.username, avatarUri = user.avatarUri, size = 36.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text("@${decodeUsername(user.username)}", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+                    Text("@${user.username}", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
                 }
                 OutlinedTextField(value = fullName, onValueChange = { fullName = it }, label = { Text("Full Name") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -307,7 +307,7 @@ fun EditUserDialog(
                                 TextButton(onClick = {
                                     showResetConfirm = false
                                     val newPass = generatePassword()
-                                    resetCredential = decodeUsername(user.username) to newPass
+                                    resetCredential = user.username to newPass
                                 }) { Text("Yes, Generate", color = MaterialTheme.colorScheme.error) }
                             },
                             dismissButton = {

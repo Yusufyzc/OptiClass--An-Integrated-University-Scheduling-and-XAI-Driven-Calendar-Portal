@@ -4,19 +4,27 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun InstructorAvailabilityAdminPage() {
+fun InstructorAvailabilityAdminPage(onRefresh: () -> Unit = {}) {
     var selectedInstructor by remember { mutableStateOf<String?>(null) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         if (selectedInstructor == null) {
-            Text("Instructor Availabilities", style = MaterialTheme.typography.headlineMedium)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Instructor Availabilities", style = MaterialTheme.typography.headlineMedium)
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
             if (AppRepository.availabilities.isEmpty()) {
                 Text("No submissions yet.")
@@ -35,7 +43,7 @@ fun InstructorAvailabilityAdminPage() {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(displayName, style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    "@${decodeUsername(availability.instructorName)}",
+                                    "@${availability.instructorName}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color.Gray
                                 )

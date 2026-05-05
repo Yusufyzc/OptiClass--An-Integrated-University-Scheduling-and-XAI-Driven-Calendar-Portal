@@ -39,6 +39,7 @@ fun OptiClassApp(viewModel: AppViewModel) {
                 onLoadMessages = { withUser, cb -> viewModel.loadMessages(withUser) { cb() } },
                 onLoadAllMessages = { cb -> viewModel.loadMessages(null) { cb() } },
                 onSendMessage = { to, content, cb -> viewModel.sendMessage(to, content, cb) },
+                onMarkMessagesRead = { sender -> viewModel.markMessagesRead(sender) },
                 onSubmitAvailability = { u, s, cb -> viewModel.submitAvailability(u, s, cb) },
                 onSaveSchedule = { u, d, h -> viewModel.saveSchedule(u, d, h) },
                 onMarkNotificationRead = { id -> viewModel.markNotificationRead(id) },
@@ -46,7 +47,9 @@ fun OptiClassApp(viewModel: AppViewModel) {
                 onSendNotification = { r, t -> viewModel.sendNotification(r, t) },
                 onAddClassroom = { c, cb -> viewModel.addClassroom(c, cb) },
                 onDeleteClassroom = { id, cb -> viewModel.deleteClassroom(id, cb) },
-                onImportClassrooms = { list, cb -> viewModel.importClassrooms(list, cb) }
+                onImportClassrooms = { list, cb -> viewModel.importClassrooms(list, cb) },
+                onRefreshInstructorData = { viewModel.refreshInstructorData() },
+                onRefreshAvailabilities = { viewModel.refreshAvailabilities() }
             )
         }
     }
@@ -68,6 +71,7 @@ fun MainScaffold(
     onLoadMessages: (withUser: String, () -> Unit) -> Unit = { _, _ -> },
     onLoadAllMessages: (() -> Unit) -> Unit = { _ -> },
     onSendMessage: (toUser: String, content: String, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onMarkMessagesRead: (sender: String) -> Unit = { _ -> },
     onSubmitAvailability: (username: String, slots: Map<String, Set<String>>, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     onSaveSchedule: (username: String, draft: Map<String, androidx.compose.runtime.snapshots.SnapshotStateMap<String, CourseImport?>>, historyEntries: List<ScheduleChange>) -> Unit = { _, _, _ -> },
     onMarkNotificationRead: (id: String) -> Unit = { _ -> },
@@ -75,7 +79,9 @@ fun MainScaffold(
     onSendNotification: (recipientUsername: String, text: String) -> Unit = { _, _ -> },
     onAddClassroom: (Classroom, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
     onDeleteClassroom: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
-    onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> }
+    onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> },
+    onRefreshInstructorData: () -> Unit = {},
+    onRefreshAvailabilities: () -> Unit = {}
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -87,14 +93,26 @@ fun MainScaffold(
     val unreadMsgCount = AppRepository.messages.count { it.recipient == userName && !it.isRead }
     val unreadNotifCount = AppRepository.notifications.count { !it.isRead && it.recipientName == userName }
 
-    var lastMessageCount by remember { mutableIntStateOf(AppRepository.messages.size) }
-    LaunchedEffect(AppRepository.messages.size) {
-        if (AppRepository.messages.size > lastMessageCount) {
-            val lastMsg = AppRepository.messages.last()
-            if (lastMsg.recipient == userName) {
+    val latestMsgTimestamp = AppRepository.messages
+        .filter { it.recipient == userName }
+        .maxOfOrNull { it.timestamp } ?: 0L
+    var lastKnownTimestamp by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(latestMsgTimestamp) {
+        if (lastKnownTimestamp == 0L) {
+            lastKnownTimestamp = latestMsgTimestamp
+            return@LaunchedEffect
+        }
+        if (latestMsgTimestamp > lastKnownTimestamp) {
+            val newMsg = AppRepository.messages
+                .filter { it.recipient == userName && it.timestamp > lastKnownTimestamp }
+                .maxByOrNull { it.timestamp }
+            lastKnownTimestamp = latestMsgTimestamp
+            if (newMsg != null) {
+                val senderName = AppRepository.users.find { it.username == newMsg.sender }?.fullName
+                    ?: newMsg.sender
                 scope.launch {
                     val result = snackbarHostState.showSnackbar(
-                        message = "New message from ${decodeUsername(lastMsg.sender)}",
+                        message = "New message from $senderName",
                         actionLabel = "View",
                         duration = SnackbarDuration.Short
                     )
@@ -104,7 +122,6 @@ fun MainScaffold(
                 }
             }
         }
-        lastMessageCount = AppRepository.messages.size
     }
 
     if (showLogoutDialog) {
@@ -232,16 +249,18 @@ fun MainScaffold(
                             adminName = userName,
                             onLoadMessages = onLoadMessages,
                             onLoadAllMessages = onLoadAllMessages,
-                            onSendMessage = onSendMessage
+                            onSendMessage = onSendMessage,
+                            onMarkMessagesRead = onMarkMessagesRead
                         )
                     role == UserRole.INSTRUCTOR && currentDestination == AppDestinations.MAIN_PAGE ->
-                        InstructorMainPage(userName, onNavigate = { currentDestination = it }, onShowNotifications = { showNotificationMenu = true })
+                        InstructorMainPage(userName, onNavigate = { currentDestination = it }, onShowNotifications = { showNotificationMenu = true }, onRefresh = onRefreshInstructorData)
                     role == UserRole.INSTRUCTOR && currentDestination == AppDestinations.NOTIFICATIONS ->
                         ChatBox(
                             currentUserName = userName,
                             targetUserName = "admin",
                             onLoadMessages = onLoadMessages,
-                            onSendMessage = onSendMessage
+                            onSendMessage = onSendMessage,
+                            onMarkMessagesRead = onMarkMessagesRead
                         )
                     currentDestination == AppDestinations.MY_AVAILABILITY ->
                         MyAvailabilityPage(
@@ -254,7 +273,7 @@ fun MainScaffold(
                     currentDestination == AppDestinations.MY_SCHEDULE ->
                         MySchedulePage(userName)
                     currentDestination == AppDestinations.INSTRUCTOR_AVAILABILITY ->
-                        InstructorAvailabilityAdminPage()
+                        InstructorAvailabilityAdminPage(onRefresh = onRefreshAvailabilities)
                     currentDestination == AppDestinations.DATA_IMPORT ->
                         DataImportPage(
                             snackbarHostState,

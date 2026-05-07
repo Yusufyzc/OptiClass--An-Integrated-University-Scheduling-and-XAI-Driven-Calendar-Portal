@@ -49,7 +49,8 @@ fun OptiClassApp(viewModel: AppViewModel) {
                 onDeleteClassroom = { id, cb -> viewModel.deleteClassroom(id, cb) },
                 onImportClassrooms = { list, cb -> viewModel.importClassrooms(list, cb) },
                 onRefreshInstructorData = { viewModel.refreshInstructorData() },
-                onRefreshAvailabilities = { viewModel.refreshAvailabilities() }
+                onRefreshAvailabilities = { viewModel.refreshAvailabilities() },
+                onSetSchedulingPhase = { phase, cb -> viewModel.setSchedulingPhase(phase, cb) }
             )
         }
     }
@@ -81,7 +82,8 @@ fun MainScaffold(
     onDeleteClassroom: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
     onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> },
     onRefreshInstructorData: () -> Unit = {},
-    onRefreshAvailabilities: () -> Unit = {}
+    onRefreshAvailabilities: () -> Unit = {},
+    onSetSchedulingPhase: (String, (Boolean) -> Unit) -> Unit = { _, _ -> }
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -292,7 +294,8 @@ fun MainScaffold(
                         UpdateCalendarPage(
                             snackbarHostState, userName,
                             onSaveSchedule = { u, d, h -> onSaveSchedule(u, d, h) },
-                            onSendNotification = onSendNotification
+                            onSendNotification = onSendNotification,
+                            onSetSchedulingPhase = onSetSchedulingPhase
                         )
                     currentDestination == AppDestinations.CLASSROOMS ->
                         ClassroomsPage(

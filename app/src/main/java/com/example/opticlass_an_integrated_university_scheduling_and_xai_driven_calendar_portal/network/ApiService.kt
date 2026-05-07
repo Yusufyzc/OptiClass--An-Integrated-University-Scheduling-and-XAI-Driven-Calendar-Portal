@@ -151,6 +151,18 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Path("id") id: String
     ): Response<Unit>
+
+    @GET("settings/scheduling_phase")
+    suspend fun getSchedulingPhase(@Header("Authorization") token: String): Response<SchedulingPhaseDto>
+
+    @PUT("settings/scheduling_phase")
+    suspend fun setSchedulingPhase(
+        @Header("Authorization") token: String,
+        @Body body: SchedulingPhaseDto
+    ): Response<Unit>
+
+    @GET("common_course_slots")
+    suspend fun getCommonCourseSlots(@Header("Authorization") token: String): Response<Map<String, List<String>>>
 }
 
 data class LoginRequest(val username: String, val passwordHash: String)
@@ -202,8 +214,12 @@ data class CourseDto(
     val department: String,
     val email: String,
     val duration: Int,
-    val classroomId: String?
+    val classroomId: String?,
+    val semester: Int = 1,
+    val studentCount: Int = 0
 )
+
+data class SchedulingPhaseDto(val phase: String)
 
 data class AvailabilityDto(
     val instructorUsername: String,

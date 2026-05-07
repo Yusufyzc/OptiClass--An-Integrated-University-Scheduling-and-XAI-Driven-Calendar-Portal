@@ -121,18 +121,18 @@ fun DataImportPage(
                             .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(4.dp))
                             .padding(4.dp)
                     ) {
-                        listOf("Code", "Name", "Lecturer", "Dept", "Email").forEach {
-                            Text(it, modifier = Modifier.weight(1f), fontSize = 10.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary)
+                        listOf("Code", "Name", "Lecturer", "Dept", "Email", "Term", "Students").forEach {
+                            Text(it, modifier = Modifier.weight(1f), fontSize = 9.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                     Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp, start = 4.dp, end = 4.dp)) {
-                        listOf("C101", "Intro...", "John D.", "CS", "john@...").forEach {
-                            Text(it, modifier = Modifier.weight(1f), fontSize = 9.sp, textAlign = TextAlign.Center, color = Color.Gray)
+                        listOf("C101", "Intro...", "John D.", "CS", "john@...", "3", "120").forEach {
+                            Text(it, modifier = Modifier.weight(1f), fontSize = 8.sp, textAlign = TextAlign.Center, color = Color.Gray)
                         }
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "Instructor accounts are automatically created. Username is derived from the instructor's name; password is a random 6-character code shown once after saving.",
+                        "Set Dept to \"COMMON\" to mark the course as a shared course. Term = semester number, Students = student count. Instructor accounts are created automatically.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp
@@ -212,6 +212,42 @@ fun DataImportPage(
                                         Icon(Icons.Default.Email, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Gray)
                                         Spacer(Modifier.width(4.dp))
                                         Text(course.email, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                                    }
+                                    Spacer(Modifier.height(6.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Surface(
+                                            color = if (course.department == "COMMON") Color(0xFFE65100) else MaterialTheme.colorScheme.secondaryContainer,
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                if (course.department == "COMMON") "COMMON" else course.department,
+                                                color = if (course.department == "COMMON") Color.White else MaterialTheme.colorScheme.onSecondaryContainer,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                "Term ${course.semester}",
+                                                fontSize = 10.sp,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                                            )
+                                        }
+                                        if (course.studentCount > 0) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.Gray)
+                                                Spacer(Modifier.width(2.dp))
+                                                Text("${course.studentCount}", fontSize = 10.sp, color = Color.Gray)
+                                            }
+                                        }
                                     }
                                 }
                                 IconButton(onClick = { previewList = previewList - course }) {
@@ -368,9 +404,12 @@ private suspend fun importExcelData(context: Context, uri: Uri): List<CourseImpo
                 val lecturer = formatter.formatCellValue(row.getCell(2)).trim()
                 val department = formatter.formatCellValue(row.getCell(3)).trim()
                 val email = formatter.formatCellValue(row.getCell(4)).trim()
+                val semester = formatter.formatCellValue(row.getCell(5)).trim().toIntOrNull() ?: 1
+                val studentCount = formatter.formatCellValue(row.getCell(6)).trim().toIntOrNull() ?: 0
 
                 if (code.isNotEmpty() && name.isNotEmpty() && isValidEmail(email)) {
-                    importedList.add(CourseImport(code, name, lecturer, department, email))
+                    importedList.add(CourseImport(code, name, lecturer, department, email,
+                        semester = semester, studentCount = studentCount))
                 }
             }
 

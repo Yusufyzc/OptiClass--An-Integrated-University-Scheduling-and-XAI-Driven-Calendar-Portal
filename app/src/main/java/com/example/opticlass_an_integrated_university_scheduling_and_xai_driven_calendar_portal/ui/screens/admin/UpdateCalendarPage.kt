@@ -34,17 +34,24 @@ fun UpdateCalendarPage(
     snackbarHostState: SnackbarHostState,
     currentAdminUser: String,
     onSaveSchedule: (username: String, draft: Map<String, SnapshotStateMap<String, CourseImport?>>, historyEntries: List<ScheduleChange>) -> Unit = { _, _, _ -> },
-    onSendNotification: (recipientUsername: String, text: String) -> Unit = { _, _ -> }
+    onSendNotification: (recipientUsername: String, text: String) -> Unit = { _, _ -> },
+    onSetSchedulingPhase: (String, (Boolean) -> Unit) -> Unit = { _, _ -> }
 ) {
     var expanded by remember { mutableStateOf(false) }
     var selectedUser by remember { mutableStateOf<User?>(null) }
-    val instructors = AppRepository.users.filter { it.role == UserRole.INSTRUCTOR }
+    val phase = AppRepository.schedulingPhase
+    val instructors = if (phase == "PHASE_1") {
+        AppRepository.users.filter { it.role == UserRole.INSTRUCTOR && it.courses.any { c -> c.department == "COMMON" } }
+    } else {
+        AppRepository.users.filter { it.role == UserRole.INSTRUCTOR }
+    }
     val scope = rememberCoroutineScope()
     var isDirty by remember { mutableStateOf(false) }
     var pendingUserSelect by remember { mutableStateOf<User?>(null) }
 
     var selectedCourseToAssign by remember { mutableStateOf<CourseImport?>(null) }
     var showHistoryDialog by remember { mutableStateOf(false) }
+    var showPhaseConfirmDialog by remember { mutableStateOf(false) }
     var showAssignDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
     var selectedDuration by remember { mutableIntStateOf(1) }
     var selectedClassroom by remember { mutableStateOf<Classroom?>(null) }
@@ -64,6 +71,33 @@ fun UpdateCalendarPage(
             }
         }
         Spacer(modifier = Modifier.height(24.dp))
+
+        if (phase == "PHASE_1") {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+                border = BorderStroke(1.dp, Color(0xFFFF6F00))
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Phase 1: Common Course Scheduling", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFFE65100))
+                        Text("Only instructors with COMMON courses are listed.", fontSize = 11.sp, color = Color(0xFFBF360C))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    OutlinedButton(
+                        onClick = { showPhaseConfirmDialog = true },
+                        border = BorderStroke(1.dp, Color(0xFFE65100)),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("Go to Phase 2 →", color = Color(0xFFE65100), fontSize = 12.sp)
+                    }
+                }
+            }
+        }
 
         Text("Select Instructor:", style = MaterialTheme.typography.titleSmall)
         Spacer(modifier = Modifier.height(8.dp))
@@ -184,6 +218,18 @@ fun UpdateCalendarPage(
                         u.schedule[reqDay]?.get(s)?.classroomId == selectedClassroom!!.id
                     }
                 }
+                val semesterConflict = selectedCourseToAssign != null && validSlots.any { s ->
+                    AppRepository.users.any { u ->
+                        val slotCourse = u.schedule[reqDay]?.get(s)
+                        slotCourse != null && slotCourse.department == "COMMON" && slotCourse.duration != -1 &&
+                            slotCourse.semester == selectedCourseToAssign!!.semester
+                    }
+                }
+                val minCapacity = selectedCourseToAssign?.studentCount ?: 0
+                val eligibleClassrooms = if (minCapacity > 0)
+                    AppRepository.classrooms.filter { it.capacity >= minCapacity }
+                else
+                    AppRepository.classrooms
 
                 fun isClassroomOccupied(room: Classroom): Boolean = validSlots.any { s ->
                     AppRepository.users.filter { it.username != user.username }.any { u ->
@@ -217,7 +263,7 @@ fun UpdateCalendarPage(
                                 onExpandedChange = { classroomDropdownExpanded = !classroomDropdownExpanded }
                             ) {
                                 OutlinedTextField(
-                                    value = selectedClassroom?.roomCode ?: "No classroom",
+                                    value = selectedClassroom?.let { "${it.roomCode} (cap: ${it.capacity})" } ?: "No classroom",
                                     onValueChange = {},
                                     readOnly = true,
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = classroomDropdownExpanded) },
@@ -233,13 +279,25 @@ fun UpdateCalendarPage(
                                         text = { Text("No classroom") },
                                         onClick = { selectedClassroom = null; classroomDropdownExpanded = false }
                                     )
-                                    AppRepository.classrooms.forEach { room ->
+                                    if (minCapacity > 0 && eligibleClassrooms.size < AppRepository.classrooms.size) {
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    "${AppRepository.classrooms.size - eligibleClassrooms.size} room(s) hidden (capacity < $minCapacity)",
+                                                    fontSize = 10.sp, color = Color.Gray
+                                                )
+                                            },
+                                            enabled = false,
+                                            onClick = {}
+                                        )
+                                    }
+                                    eligibleClassrooms.forEach { room ->
                                         val occupied = isClassroomOccupied(room)
                                         DropdownMenuItem(
                                             text = {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Text(
-                                                        room.roomCode,
+                                                        "${room.roomCode}  (cap: ${room.capacity})",
                                                         color = if (occupied) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) else Color.Unspecified
                                                     )
                                                     if (occupied) {
@@ -286,11 +344,19 @@ fun UpdateCalendarPage(
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
+                            if (semesterConflict) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "A COMMON course with the same semester is scheduled at this time. Same-semester students will conflict.",
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
                         }
                     },
                     confirmButton = {
                         TextButton(
-                            enabled = !outOfBounds && !classroomConflict,
+                            enabled = !outOfBounds && !classroomConflict && !semesterConflict,
                             onClick = {
                                 val course = selectedCourseToAssign!!.copy(
                                     duration = selectedDuration,
@@ -390,6 +456,30 @@ fun UpdateCalendarPage(
         )
     }
 
+    if (showPhaseConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showPhaseConfirmDialog = false },
+            title = { Text("Switch to Phase 2") },
+            text = { Text("Common course assignments will be finalized and availability forms will open for all instructors. This cannot be undone. Continue?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showPhaseConfirmDialog = false
+                    onSetSchedulingPhase("PHASE_2") { success ->
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                if (success) "Switched to Phase 2. Instructors can now submit availability."
+                                else "Switch failed, please try again."
+                            )
+                        }
+                    }
+                }) { Text("Switch", color = Color(0xFFE65100)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPhaseConfirmDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     if (showHistoryDialog) {
         val sdf = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
         AlertDialog(
@@ -453,15 +543,49 @@ fun UpdateCalendarPage(
 
 @Composable
 fun CourseItemSelectable(course: CourseImport, isSelected: Boolean, onClick: () -> Unit) {
+    val isCommon = course.department == "COMMON"
     Card(
-        modifier = Modifier.width(120.dp).clickable { onClick() },
+        modifier = Modifier.width(130.dp).clickable { onClick() },
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
-        )
+            containerColor = when {
+                isSelected && isCommon -> Color(0xFFE65100)
+                isSelected -> MaterialTheme.colorScheme.primary
+                isCommon -> Color(0xFFFFF3E0)
+                else -> MaterialTheme.colorScheme.primaryContainer
+            }
+        ),
+        border = if (isCommon && !isSelected) BorderStroke(1.dp, Color(0xFFFF6F00)) else null
     ) {
         Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(course.code, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (isSelected) Color.White else Color.Unspecified)
-            Text(course.name, fontSize = 10.sp, maxLines = 1, textAlign = TextAlign.Center, color = if (isSelected) Color.White else Color.Unspecified)
+            Text(
+                course.code, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                color = if (isSelected) Color.White else if (isCommon) Color(0xFFE65100) else Color.Unspecified
+            )
+            Text(
+                course.name, fontSize = 10.sp, maxLines = 1, textAlign = TextAlign.Center,
+                color = if (isSelected) Color.White else Color.Unspecified
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    color = if (isSelected) Color.White.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                    shape = RoundedCornerShape(3.dp)
+                ) {
+                    Text(
+                        "Term ${course.semester}", fontSize = 8.sp,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                if (course.studentCount > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(8.dp),
+                            tint = if (isSelected) Color.White else Color.Gray)
+                        Text(" ${course.studentCount}", fontSize = 8.sp,
+                            color = if (isSelected) Color.White else Color.Gray)
+                    }
+                }
+            }
         }
     }
 }

@@ -1,7 +1,10 @@
 package com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal
 
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.AvailabilityDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ClassroomDto
@@ -22,6 +25,23 @@ object AppRepository {
     val classrooms = mutableStateListOf<Classroom>()
     val availabilityDrafts = mutableStateMapOf<String, Map<String, Set<String>>>()
     val scheduleHistory = mutableStateListOf<ScheduleChange>()
+    var schedulingPhase by mutableStateOf("PHASE_1")
+    val commonCourseSlots = mutableStateMapOf<String, Set<String>>()
+
+    fun recomputeCommonCourseSlots() {
+        val result = mutableMapOf<String, MutableSet<String>>()
+        users.forEach { user ->
+            DAYS.forEach { day ->
+                user.schedule[day]?.forEach { (slot, course) ->
+                    if (course != null && course.department == "COMMON" && course.duration != -1) {
+                        result.getOrPut(day) { mutableSetOf() }.add(slot)
+                    }
+                }
+            }
+        }
+        commonCourseSlots.clear()
+        result.forEach { (day, slots) -> commonCourseSlots[day] = slots }
+    }
 
     fun syncUsers(userDtos: List<UserDto>) {
         users.clear()
@@ -114,7 +134,9 @@ object AppRepository {
                     department = dto.department,
                     email = dto.email,
                     duration = dto.duration,
-                    classroomId = dto.classroomId
+                    classroomId = dto.classroomId,
+                    semester = dto.semester,
+                    studentCount = dto.studentCount
                 )
                 courseImports.add(course)
                 dto.lecturerUsername?.let { username ->
@@ -146,12 +168,14 @@ object AppRepository {
                 if (day in DAYS && slot in TIME_SLOTS) {
                     newSchedule[day]?.set(slot, dto?.let { d ->
                         CourseImport(code = d.code, name = d.name, lecturer = d.lecturerUsername ?: "",
-                            department = d.department, email = d.email, duration = d.duration, classroomId = d.classroomId)
+                            department = d.department, email = d.email, duration = d.duration,
+                            classroomId = d.classroomId, semester = d.semester, studentCount = d.studentCount)
                     })
                 }
             }
         }
         users[index] = users[index].copy(schedule = newSchedule)
+        recomputeCommonCourseSlots()
     }
 
     fun syncAvailabilities(dtos: List<AvailabilityDto>) {

@@ -21,6 +21,7 @@ import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.RetrofitClient
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ScheduleDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ScheduleHistoryDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.SchedulingPhaseDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.UserCreateDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.UserUpdateDto
 import kotlinx.coroutines.launch
@@ -129,8 +130,46 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
                 val historyResponse = RetrofitClient.instance.getHistory(authToken)
                 if (historyResponse.isSuccessful) AppRepository.syncHistory(historyResponse.body() ?: emptyList())
+
+                try {
+                    val phaseResponse = RetrofitClient.instance.getSchedulingPhase(authToken)
+                    if (phaseResponse.isSuccessful) {
+                        AppRepository.schedulingPhase = phaseResponse.body()?.phase ?: "PHASE_1"
+                    }
+                } catch (e: Exception) { /* backend henüz hazır değil, PHASE_1 default kalır */ }
+
+                AppRepository.recomputeCommonCourseSlots()
             } catch (e: Exception) {
                 Log.e("AppViewModel", "Fetch data error", e)
+            }
+        }
+    }
+
+    fun fetchSchedulingPhase() {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.getSchedulingPhase(authToken)
+                if (response.isSuccessful) {
+                    AppRepository.schedulingPhase = response.body()?.phase ?: "PHASE_1"
+                }
+            } catch (e: Exception) { Log.e("AppViewModel", "Fetch scheduling phase error", e) }
+        }
+    }
+
+    fun setSchedulingPhase(phase: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.setSchedulingPhase(authToken, SchedulingPhaseDto(phase))
+                if (response.isSuccessful) {
+                    AppRepository.schedulingPhase = phase
+                    onResult(true)
+                } else {
+                    onResult(false)
+                }
+            } catch (e: Exception) {
+                Log.e("AppViewModel", "Set scheduling phase error", e)
+                AppRepository.schedulingPhase = phase
+                onResult(true)
             }
         }
     }
@@ -167,7 +206,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val courseDtos = courses.filter { it.duration != -1 }.map { c ->
                     val lecturerUsername = c.email.substringBefore("@").ifBlank { generateUsername(c.lecturer) }
                     CourseDto(code = c.code, name = c.name, lecturerUsername = lecturerUsername,
-                        department = c.department, email = c.email, duration = c.duration, classroomId = c.classroomId)
+                        department = c.department, email = c.email, duration = c.duration,
+                        classroomId = c.classroomId, semester = c.semester, studentCount = c.studentCount)
                 }
                 if (courseDtos.isNotEmpty()) RetrofitClient.instance.importCourses(authToken, courseDtos)
 
@@ -373,7 +413,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                                 code = course.code, name = course.name,
                                 lecturerUsername = AppRepository.users.find { u -> u.courses.any { it.code == course.code } }?.username,
                                 department = course.department, email = course.email,
-                                duration = course.duration, classroomId = course.classroomId
+                                duration = course.duration, classroomId = course.classroomId,
+                                semester = course.semester, studentCount = course.studentCount
                             )
                         }
                     }

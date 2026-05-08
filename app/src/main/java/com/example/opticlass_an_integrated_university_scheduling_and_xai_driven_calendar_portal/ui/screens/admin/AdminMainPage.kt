@@ -206,9 +206,7 @@ fun AdminMainPage(
                     } else {
                         LazyColumn {
                             items(availableClassrooms) { room ->
-                                val booked = bookedSlotsPerRoom[room.id]?.size ?: 0
-                                val total = DAYS.size * TIME_SLOTS.size
-                                Text("• ${room.roomCode} (${total - booked}/$total free)", modifier = Modifier.padding(vertical = 4.dp))
+                                Text("• ${room.roomCode} (cap: ${room.capacity})", modifier = Modifier.padding(vertical = 4.dp))
                             }
                         }
                     }

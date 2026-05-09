@@ -5,22 +5,15 @@ import retrofit2.http.*
 
 interface ApiService {
 
-    // ==========================================
-    // AUTH & HEALTH
-    // ==========================================
     @POST("auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
 
     @GET("/")
     suspend fun healthCheck(): Response<Map<String, String>>
 
-    // ==========================================
-    // USERS (CRUD) & SETTINGS
-    // ==========================================
     @GET("users")
     suspend fun getUsers(@Header("Authorization") token: String): Response<List<UserDto>>
 
-    // DİKKAT: Yeni kullanıcı eklerken şifre gerektiği için UserCreateDto kullanılır
     @POST("users")
     suspend fun addUser(@Header("Authorization") token: String, @Body user: UserCreateDto): Response<UserDto>
 
@@ -44,9 +37,20 @@ interface ApiService {
         @Body request: ChangePasswordRequest
     ): Response<Unit>
 
-    // ==========================================
-    // CLASSROOMS
-    // ==========================================
+    @PUT("users/{username}/avatar")
+    suspend fun updateAvatar(
+        @Header("Authorization") token: String,
+        @Path("username") username: String,
+        @Body body: AvatarUpdateDto
+    ): Response<Unit>
+
+    @PUT("users/{username}/reset-password")
+    suspend fun adminResetPassword(
+        @Header("Authorization") token: String,
+        @Path("username") username: String,
+        @Body request: AdminResetPasswordRequest
+    ): Response<Unit>
+
     @GET("classrooms")
     suspend fun getClassrooms(@Header("Authorization") token: String): Response<List<ClassroomDto>>
 
@@ -56,9 +60,12 @@ interface ApiService {
         @Body classroom: ClassroomDto
     ): Response<ClassroomDto>
 
-    // ==========================================
-    // COURSES
-    // ==========================================
+    @DELETE("classrooms/{id}")
+    suspend fun deleteClassroom(
+        @Header("Authorization") token: String,
+        @Path("id") id: String
+    ): Response<Unit>
+
     @GET("courses")
     suspend fun getCourses(@Header("Authorization") token: String): Response<List<CourseDto>>
 
@@ -74,9 +81,9 @@ interface ApiService {
         @Path("code") code: String
     ): Response<Unit>
 
-    // ==========================================
-    // AVAILABILITIES
-    // ==========================================
+    @GET("availabilities")
+    suspend fun getAllAvailabilities(@Header("Authorization") token: String): Response<List<AvailabilityDto>>
+
     @GET("availabilities/{username}")
     suspend fun getAvailability(
         @Header("Authorization") token: String,
@@ -90,9 +97,9 @@ interface ApiService {
         @Body body: AvailabilityDto
     ): Response<Unit>
 
-    // ==========================================
-    // SCHEDULES & HISTORY
-    // ==========================================
+    @GET("schedules")
+    suspend fun getAllSchedules(@Header("Authorization") token: String): Response<List<ScheduleDto>>
+
     @GET("schedules/{username}")
     suspend fun getSchedule(
         @Header("Authorization") token: String,
@@ -112,13 +119,10 @@ interface ApiService {
     @POST("history")
     suspend fun addHistory(@Header("Authorization") token: String, @Body body: ScheduleHistoryDto): Response<Unit>
 
-    // ==========================================
-    // MESSAGES
-    // ==========================================
     @GET("messages")
     suspend fun getMessages(
         @Header("Authorization") token: String,
-        @Query("with_user") otherUsername: String // Python'daki with_user parametresi ile uyumlu
+        @Query("with_user") otherUsername: String? = null
     ): Response<List<MessageDto>>
 
     @POST("messages")
@@ -127,15 +131,12 @@ interface ApiService {
         @Body body: MessageDto
     ): Response<MessageDto>
 
-    @PATCH("messages/{id}/read")
-    suspend fun markMessageRead(
+    @PATCH("messages/mark-read")
+    suspend fun markMessagesRead(
         @Header("Authorization") token: String,
-        @Path("id") id: Int
+        @Query("sender") sender: String
     ): Response<Unit>
 
-    // ==========================================
-    // NOTIFICATIONS
-    // ==========================================
     @GET("notifications")
     suspend fun getNotifications(@Header("Authorization") token: String): Response<List<NotificationDto>>
 
@@ -144,16 +145,27 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Body body: NotificationDto
     ): Response<Unit>
+
+    @PATCH("notifications/{id}/read")
+    suspend fun markNotificationRead(
+        @Header("Authorization") token: String,
+        @Path("id") id: String
+    ): Response<Unit>
+
+    @GET("settings/scheduling_phase")
+    suspend fun getSchedulingPhase(@Header("Authorization") token: String): Response<SchedulingPhaseDto>
+
+    @PUT("settings/scheduling_phase")
+    suspend fun setSchedulingPhase(
+        @Header("Authorization") token: String,
+        @Body body: SchedulingPhaseDto
+    ): Response<Unit>
+
+    @GET("common_course_slots")
+    suspend fun getCommonCourseSlots(@Header("Authorization") token: String): Response<Map<String, List<String>>>
 }
 
-// ==============================================================================
-// DATA TRANSFER OBJECTS (DTOs)
-// ==============================================================================
-
-data class LoginRequest(
-    val username: String,
-    val passwordHash: String
-)
+data class LoginRequest(val username: String, val passwordHash: String)
 
 data class LoginResponse(
     val token: String,
@@ -162,16 +174,15 @@ data class LoginResponse(
     val mustChangePassword: Boolean
 )
 
-// Kullanıcı okuma işlemlerinde şifre gelmez
 data class UserDto(
     val username: String,
     val role: String,
     val fullName: String,
     val email: String?,
-    val department: String?
+    val department: String?,
+    val avatarUrl: String? = null
 )
 
-// Kullanıcı oluştururken şifre hash'i gereklidir
 data class UserCreateDto(
     val username: String,
     val passwordHash: String,
@@ -181,7 +192,6 @@ data class UserCreateDto(
     val department: String?
 )
 
-// Kullanıcı güncellerken şifre harici alanlar
 data class UserUpdateDto(
     val role: String,
     val fullName: String,
@@ -189,16 +199,13 @@ data class UserUpdateDto(
     val department: String?
 )
 
-data class ChangePasswordRequest(
-    val currentPasswordHash: String,
-    val newPasswordHash: String
-)
+data class ChangePasswordRequest(val currentPasswordHash: String, val newPasswordHash: String)
 
-data class ClassroomDto(
-    val id: String,
-    val roomCode: String,
-    val capacity: Int
-)
+data class AdminResetPasswordRequest(val newPasswordHash: String)
+
+data class AvatarUpdateDto(val avatarUrl: String)
+
+data class ClassroomDto(val id: String, val roomCode: String, val capacity: Int)
 
 data class CourseDto(
     val code: String,
@@ -207,8 +214,13 @@ data class CourseDto(
     val department: String,
     val email: String,
     val duration: Int,
-    val classroomId: String?
+    val classroomId: String?,
+    val semester: Int = 1,
+    val studentCount: Int = 0,
+    val priority: Int = 1
 )
+
+data class SchedulingPhaseDto(val phase: String)
 
 data class AvailabilityDto(
     val instructorUsername: String,
@@ -227,7 +239,8 @@ data class ScheduleHistoryDto(
     val day: String,
     val timeSlot: String,
     val previousCourseCode: String?,
-    val newCourseCode: String?
+    val newCourseCode: String?,
+    val changedAt: Long? = null
 )
 
 data class MessageDto(

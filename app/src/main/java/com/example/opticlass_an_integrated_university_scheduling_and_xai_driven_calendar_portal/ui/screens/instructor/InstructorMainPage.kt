@@ -8,6 +8,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -16,12 +18,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun InstructorMainPage(
-    userName: String,
-    onNavigate: (AppDestinations) -> Unit = {},
-    onShowNotifications: () -> Unit = {},
-    viewModel: AppViewModel
-) {
+fun InstructorMainPage(userName: String, onNavigate: (AppDestinations) -> Unit = {}, onShowNotifications: () -> Unit = {}, onRefresh: () -> Unit = {}) {
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000L)
+            onRefresh()
+        }
+    }
     val user = AppRepository.users.find { it.username == userName } ?: return
     val unreadMessages = AppRepository.messages.count { it.recipient == userName && !it.isRead }
     val unreadNotifs = AppRepository.notifications.count { !it.isRead && it.recipientName == userName }

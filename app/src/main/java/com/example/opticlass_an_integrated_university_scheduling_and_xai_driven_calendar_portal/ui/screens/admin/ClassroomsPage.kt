@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -23,53 +24,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ClassroomDto
-import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.RetrofitClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.DataFormatter
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.InputStream
-import java.util.UUID
 
 @Composable
-fun ClassroomsPage(snackbarHostState: SnackbarHostState, viewModel: AppViewModel) {
+fun ClassroomsPage(
+    snackbarHostState: SnackbarHostState,
+    onAddClassroom: (Classroom, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
+    onDeleteClassroom: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
+    onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> }
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-
-    // UI State
-    var classrooms by remember { mutableStateOf<List<ClassroomDto>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
     var isImporting by remember { mutableStateOf(false) }
-    var previewList by remember { mutableStateOf<List<ClassroomDto>>(emptyList()) }
+    var previewList by remember { mutableStateOf<List<Classroom>>(emptyList()) }
     var pendingUri by remember { mutableStateOf<Uri?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
-
-    // API'den derslikleri çeken fonksiyon
-    val loadClassrooms = {
-        scope.launch {
-            isLoading = true
-            try {
-                val token = "Bearer ${viewModel.authToken}"
-                val response = RetrofitClient.instance.getClassrooms(token)
-                if (response.isSuccessful) {
-                    classrooms = response.body() ?: emptyList()
-                } else {
-                    Log.e("ClassroomsPage", "Hata: ${response.code()}")
-                }
-            } catch (e: Exception) {
-                Log.e("ClassroomsPage", "Derslikler çekilirken hata", e)
-            } finally {
-                isLoading = false
-            }
-        }
-    }
-
-    // Sayfa ilk açıldığında listeyi yükle
-    LaunchedEffect(Unit) {
-        loadClassrooms()
-    }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -84,9 +58,9 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState, viewModel: AppViewModel
                     isImporting = false
                     if (result != null) {
                         previewList = result
-                        snackbarHostState.showSnackbar("${result.size} classrooms loaded. Review and save.")
+                        scope.launch { snackbarHostState.showSnackbar("${result.size} classrooms loaded. Review and save.") }
                     } else {
-                        snackbarHostState.showSnackbar("Failed to parse Excel file. Check format.")
+                        scope.launch { snackbarHostState.showSnackbar("Wrong file format. Expected: Classroom Code | Capacity") }
                     }
                 }
             }
@@ -108,9 +82,9 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState, viewModel: AppViewModel
                         isImporting = false
                         if (result != null) {
                             previewList = result
-                            snackbarHostState.showSnackbar("${result.size} classrooms loaded. Review and save.")
+                            scope.launch { snackbarHostState.showSnackbar("${result.size} classrooms loaded. Review and save.") }
                         } else {
-                            snackbarHostState.showSnackbar("Failed to parse Excel file. Check format.")
+                            scope.launch { snackbarHostState.showSnackbar("Wrong file format. Expected: Classroom Code | Capacity") }
                         }
                     }
                 }) { Text("Replace") }
@@ -133,7 +107,6 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState, viewModel: AppViewModel
             }
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Excel Format Info Card (Department çıkarıldı)
             Card(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 shape = RoundedCornerShape(12.dp),
@@ -153,68 +126,93 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState, viewModel: AppViewModel
                             .padding(4.dp)
                     ) {
                         listOf("Room Code", "Capacity").forEach {
-                            Text(it, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary)
+                            Text(it, modifier = Modifier.weight(1f), fontSize = 10.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp, start = 4.dp, end = 4.dp)) {
+                        listOf("A101", "40").forEach {
+                            Text(it, modifier = Modifier.weight(1f), fontSize = 9.sp, textAlign = TextAlign.Center, color = Color.Gray)
                         }
                     }
                 }
             }
 
             if (previewList.isNotEmpty()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Preview (${previewList.size} items)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { previewList = emptyList() }) { Text("Discard") }
-                                Button(onClick = {
-                                    scope.launch {
-                                        isImporting = true
-                                        var savedCount = 0
-                                        val token = "Bearer ${viewModel.authToken}"
+                    Text("Preview (${previewList.size} items)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Button(
+                        onClick = {
+                            val toSave = previewList.toList()
+                            previewList = emptyList()
+                            onImportClassrooms(toSave) { saved, skipped ->
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        if (skipped > 0) "$saved saved, $skipped duplicate(s) skipped."
+                                        else "$saved classrooms saved."
+                                    )
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Done, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Save All")
+                    }
+                }
 
-                                        previewList.forEach { c ->
-                                            try {
-                                                val response = RetrofitClient.instance.addClassroom(token, c)
-                                                if (response.isSuccessful) savedCount++
-                                            } catch (e: Exception) {
-                                                Log.e("API", "Derslik eklenemedi", e)
+                LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 80.dp)) {
+                    items(previewList) { classroom ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.School, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(classroom.roomCode, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                                    if (classroom.capacity > 0) {
+                                        Text("Capacity: ${classroom.capacity}", fontSize = 12.sp, color = Color.Gray)
+                                    }
+                                }
+                                IconButton(onClick = { previewList = previewList - classroom }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Discard", tint = MaterialTheme.colorScheme.error)
+                                }
+                                IconButton(
+                                    onClick = {
+                                        previewList = previewList - classroom
+                                        onImportClassrooms(listOf(classroom)) { saved, _ ->
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    if (saved > 0) "'${classroom.roomCode}' saved."
+                                                    else "'${classroom.roomCode}' already exists, skipped."
+                                                )
                                             }
                                         }
-
-                                        // API'den güncel listeyi çek
-                                        loadClassrooms()
-
-                                        isImporting = false
-                                        previewList = emptyList()
-                                        snackbarHostState.showSnackbar("$savedCount classrooms saved to server.")
                                     }
-                                }) { Text("Save All") }
+                                ) {
+                                    Icon(Icons.Default.Check, contentDescription = "Save", tint = MaterialTheme.colorScheme.primary)
+                                }
                             }
                         }
                     }
                 }
             }
 
-            if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else if (classrooms.isEmpty() && previewList.isEmpty()) {
+            if (AppRepository.classrooms.isEmpty() && previewList.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.School, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.LightGray)
                         Spacer(Modifier.height(16.dp))
-                        Text("No classrooms yet.\nFetch or tap + to import.", textAlign = TextAlign.Center, color = Color.Gray)
-                        Button(onClick = { loadClassrooms() }) { Text("Refresh from Server") }
+                        Text("No classrooms yet.\nTap + to import from Excel.", textAlign = TextAlign.Center, color = Color.Gray)
                     }
                 }
             } else {
@@ -223,7 +221,7 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState, viewModel: AppViewModel
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
-                    items(classrooms) { classroom ->
+                    items(AppRepository.classrooms.toList()) { classroom ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp)
@@ -238,8 +236,15 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState, viewModel: AppViewModel
                                     Spacer(Modifier.width(12.dp))
                                     Column {
                                         Text(classroom.roomCode, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                                        Text("Capacity: ${classroom.capacity}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                        if (classroom.capacity > 0) {
+                                            Text("Capacity: ${classroom.capacity}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                        }
                                     }
+                                }
+                                IconButton(onClick = {
+                                    onDeleteClassroom(classroom.id) { _, _ -> }
+                                }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }
@@ -249,9 +254,7 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState, viewModel: AppViewModel
         }
 
         if (isImporting) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
         }
 
         FloatingActionButton(
@@ -265,30 +268,28 @@ fun ClassroomsPage(snackbarHostState: SnackbarHostState, viewModel: AppViewModel
     if (showAddDialog) {
         AddClassroomDialog(
             onDismiss = { showAddDialog = false },
-            onAdd = { classroomDto ->
-                scope.launch {
-                    try {
-                        val token = "Bearer ${viewModel.authToken}"
-                        val response = RetrofitClient.instance.addClassroom(token, classroomDto)
-
-                        if (response.isSuccessful) {
-                            loadClassrooms() // Listeyi yenile
-                            snackbarHostState.showSnackbar("Classroom '${classroomDto.roomCode}' added to server.")
-                        } else {
-                            snackbarHostState.showSnackbar("Error: ${response.code()}")
+            onAdd = { classroom ->
+                if (AppRepository.classrooms.any { it.roomCode.equals(classroom.roomCode, ignoreCase = true) }) {
+                    scope.launch { snackbarHostState.showSnackbar("Room code '${classroom.roomCode}' already exists.") }
+                    showAddDialog = false
+                } else {
+                    onAddClassroom(classroom) { success, _ ->
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                if (success) "Classroom '${classroom.roomCode}' added."
+                                else "Failed to add classroom."
+                            )
                         }
-                    } catch (e: Exception) {
-                        snackbarHostState.showSnackbar("Network error: ${e.localizedMessage}")
                     }
+                    showAddDialog = false
                 }
-                showAddDialog = false
             }
         )
     }
 }
 
 @Composable
-fun AddClassroomDialog(onDismiss: () -> Unit, onAdd: (ClassroomDto) -> Unit) {
+fun AddClassroomDialog(onDismiss: () -> Unit, onAdd: (Classroom) -> Unit) {
     var roomCode by remember { mutableStateOf("") }
     var capacity by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf("") }
@@ -298,8 +299,8 @@ fun AddClassroomDialog(onDismiss: () -> Unit, onAdd: (ClassroomDto) -> Unit) {
         title = { Text("Add Classroom") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = roomCode, onValueChange = { roomCode = it }, label = { Text("Room Code") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = capacity, onValueChange = { capacity = it }, label = { Text("Capacity") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(value = roomCode, onValueChange = { roomCode = it }, label = { Text("Room Code (e.g. A101)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(value = capacity, onValueChange = { capacity = it }, label = { Text("Capacity") }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
                 if (errorMsg.isNotEmpty()) {
                     Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
@@ -307,15 +308,15 @@ fun AddClassroomDialog(onDismiss: () -> Unit, onAdd: (ClassroomDto) -> Unit) {
         },
         confirmButton = {
             TextButton(onClick = {
-                if (roomCode.isBlank()) {
-                    errorMsg = "Room Code is required"
-                } else {
-                    val dto = ClassroomDto(
-                        id = UUID.randomUUID().toString(), // Benzersiz ID oluştur
-                        roomCode = roomCode.uppercase(),
-                        capacity = capacity.toIntOrNull() ?: 0
+                when {
+                    roomCode.isBlank() -> errorMsg = "Room code is required"
+                    else -> onAdd(
+                        Classroom(
+                            id = "room_${System.currentTimeMillis()}",
+                            roomCode = roomCode.trim().uppercase(),
+                            capacity = capacity.toIntOrNull() ?: 0
+                        )
                     )
-                    onAdd(dto)
                 }
             }) { Text("Add") }
         },
@@ -323,40 +324,45 @@ fun AddClassroomDialog(onDismiss: () -> Unit, onAdd: (ClassroomDto) -> Unit) {
     )
 }
 
-// Excel dosyasını direkt ClassroomDto objesine dönüştürür
-private suspend fun importClassroomData(context: Context, uri: Uri): List<ClassroomDto>? {
+private suspend fun importClassroomData(context: Context, uri: Uri): List<Classroom>? {
     return withContext(Dispatchers.IO) {
         try {
             val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
             if (inputStream == null) return@withContext null
+
             val workbook = WorkbookFactory.create(inputStream)
             val sheet = workbook.getSheetAt(0)
             val rows = sheet.iterator()
             val formatter = DataFormatter()
 
-            // Başlık satırını atla
-            if (rows.hasNext()) rows.next()
+            if (!rows.hasNext()) return@withContext null
+            val headerRow = rows.next()
+            val nonEmptyCols = (0 until headerRow.lastCellNum).count {
+                formatter.formatCellValue(headerRow.getCell(it)).trim().isNotEmpty()
+            }
+            val h0 = formatter.formatCellValue(headerRow.getCell(0)).trim().lowercase()
+            val h1 = formatter.formatCellValue(headerRow.getCell(1)).trim().lowercase()
+            val validHeader = nonEmptyCols == 2 &&
+                              (h0 == "classroom code" || h0 == "room code") &&
+                              h1 == "capacity"
+            if (!validHeader) return@withContext null
 
-            val list = mutableListOf<ClassroomDto>()
+            val list = mutableListOf<Classroom>()
+            var index = 0
             while (rows.hasNext()) {
                 val row = rows.next()
                 val roomCode = formatter.formatCellValue(row.getCell(0)).trim()
                 val capacityStr = formatter.formatCellValue(row.getCell(1)).trim()
-
                 if (roomCode.isNotEmpty()) {
-                    list.add(
-                        ClassroomDto(
-                            id = UUID.randomUUID().toString(),
-                            roomCode = roomCode,
-                            capacity = capacityStr.toIntOrNull() ?: 0
-                        )
-                    )
+                    val capacity = capacityStr.toIntOrNull() ?: 0
+                    list.add(Classroom(id = "room_${System.currentTimeMillis()}_${index++}", roomCode = roomCode, capacity = capacity))
                 }
             }
             workbook.close()
             inputStream.close()
             list
         } catch (e: Exception) {
+            Log.e("ClassroomImport", "Error: ${e.message}")
             null
         }
     }

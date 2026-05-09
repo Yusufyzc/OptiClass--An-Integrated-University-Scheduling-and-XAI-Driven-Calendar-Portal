@@ -18,9 +18,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun AdminMainPage(adminName: String, viewModel: AppViewModel) {
+fun AdminMainPage(
+    adminName: String,
+    onLoadMessages: (withUser: String, () -> Unit) -> Unit = { _, _ -> },
+    onLoadAllMessages: (() -> Unit) -> Unit = { _ -> },
+    onSendMessage: (toUser: String, content: String, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onMarkMessagesRead: (sender: String) -> Unit = { _ -> }
+) {
     var selectedUser by remember { mutableStateOf<String?>(null) }
     var showNewChatDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        onLoadAllMessages {}
+    }
 
     val conversationUsers = AppRepository.messages
         .filter { it.recipient == adminName || it.sender == adminName }
@@ -35,7 +45,7 @@ fun AdminMainPage(adminName: String, viewModel: AppViewModel) {
     val assignedCourseCodes = AppRepository.users.flatMap { user ->
         user.schedule.values.flatMap { day -> day.values.filterNotNull().map { it.code } }
     }.toSet()
-    val allInstructorCourses = AppRepository.users.filter { it.role == UserRole.INSTRUCTOR }.flatMap { it.courses }
+    val allInstructorCourses = AppRepository.courseImports
     val unassignedCourses = allInstructorCourses.filter { it.code !in assignedCourseCodes }
     val bookedSlotsPerRoom = AppRepository.users.flatMap { user ->
         user.schedule.entries.flatMap { (day, dayMap) ->
@@ -123,8 +133,6 @@ fun AdminMainPage(adminName: String, viewModel: AppViewModel) {
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
-                                        } else {
-                                            Text("@${decodeUsername(user)}", fontSize = 12.sp, color = Color.Gray)
                                         }
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
@@ -198,9 +206,7 @@ fun AdminMainPage(adminName: String, viewModel: AppViewModel) {
                     } else {
                         LazyColumn {
                             items(availableClassrooms) { room ->
-                                val booked = bookedSlotsPerRoom[room.id]?.size ?: 0
-                                val total = DAYS.size * TIME_SLOTS.size
-                                Text("• ${room.roomCode} (${total - booked}/$total free)", modifier = Modifier.padding(vertical = 4.dp))
+                                Text("• ${room.roomCode} (cap: ${room.capacity})", modifier = Modifier.padding(vertical = 4.dp))
                             }
                         }
                     }
@@ -227,10 +233,7 @@ fun AdminMainPage(adminName: String, viewModel: AppViewModel) {
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Column(modifier = Modifier.fillMaxWidth()) {
-                                        Text(instructor.fullName, fontWeight = FontWeight.Medium)
-                                        Text("@${decodeUsername(instructor.username)}", fontSize = 12.sp, color = Color.Gray)
-                                    }
+                                    Text(instructor.fullName, fontWeight = FontWeight.Medium, modifier = Modifier.fillMaxWidth())
                                 }
                             }
                         }
@@ -244,7 +247,13 @@ fun AdminMainPage(adminName: String, viewModel: AppViewModel) {
     } else {
         Column(modifier = Modifier.fillMaxSize()) {
             TextButton(onClick = { selectedUser = null }) { Text("< Back") }
-            ChatBox(adminName, selectedUser!!, viewModel)
+            ChatBox(
+                currentUserName = adminName,
+                targetUserName = selectedUser!!,
+                onLoadMessages = onLoadMessages,
+                onSendMessage = onSendMessage,
+                onMarkMessagesRead = onMarkMessagesRead
+            )
         }
     }
 }

@@ -10,8 +10,20 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import androidx.compose.runtime.snapshots.SnapshotStateMap
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.AdminResetPasswordRequest
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.AvatarUpdateDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.AvailabilityDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.CourseDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.LoginRequest
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.MessageDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.NotificationDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.RetrofitClient
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ScheduleDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ScheduleHistoryDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.SchedulingPhaseDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.UserCreateDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.UserUpdateDto
 import kotlinx.coroutines.launch
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
@@ -36,6 +48,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var userRole by mutableStateOf(UserRole.INSTRUCTOR)
         private set
     var authToken by mutableStateOf("")
+        private set
+    var mustChangePassword by mutableStateOf(false)
         private set
 
     init {
@@ -76,6 +90,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         apply()
                     }
 
+                    mustChangePassword = body.mustChangePassword
                     fetchInitialData()
                     onResult(true, null)
                 } else {
@@ -92,16 +107,481 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val userResponse = RetrofitClient.instance.getUsers(authToken)
-                if (userResponse.isSuccessful) {
-                    AppRepository.syncUsers(userResponse.body() ?: emptyList())
-                }
+                if (userResponse.isSuccessful) AppRepository.syncUsers(userResponse.body() ?: emptyList())
 
                 val classroomResponse = RetrofitClient.instance.getClassrooms(authToken)
-                if (classroomResponse.isSuccessful) {
-                    AppRepository.syncClassrooms(classroomResponse.body() ?: emptyList())
+                if (classroomResponse.isSuccessful) AppRepository.syncClassrooms(classroomResponse.body() ?: emptyList())
+
+                val courseResponse = RetrofitClient.instance.getCourses(authToken)
+                if (courseResponse.isSuccessful) AppRepository.syncCourses(courseResponse.body() ?: emptyList())
+
+                val scheduleResponse = RetrofitClient.instance.getAllSchedules(authToken)
+                if (scheduleResponse.isSuccessful) {
+                    scheduleResponse.body()?.forEach { dto ->
+                        AppRepository.syncSchedule(dto.instructorUsername, dto.slots)
+                    }
                 }
+
+                val availResponse = RetrofitClient.instance.getAllAvailabilities(authToken)
+                if (availResponse.isSuccessful) AppRepository.syncAvailabilities(availResponse.body() ?: emptyList())
+
+                val notifResponse = RetrofitClient.instance.getNotifications(authToken)
+                if (notifResponse.isSuccessful) AppRepository.syncNotifications(notifResponse.body() ?: emptyList())
+
+                val historyResponse = RetrofitClient.instance.getHistory(authToken)
+                if (historyResponse.isSuccessful) AppRepository.syncHistory(historyResponse.body() ?: emptyList())
+
+                try {
+                    val phaseResponse = RetrofitClient.instance.getSchedulingPhase(authToken)
+                    if (phaseResponse.isSuccessful) {
+                        AppRepository.schedulingPhase = phaseResponse.body()?.phase ?: "PHASE_1"
+                    }
+                } catch (e: Exception) { /* backend henüz hazır değil, PHASE_1 default kalır */ }
+
+                AppRepository.recomputeCommonCourseSlots()
             } catch (e: Exception) {
                 Log.e("AppViewModel", "Fetch data error", e)
+            }
+        }
+    }
+
+    fun fetchSchedulingPhase() {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.getSchedulingPhase(authToken)
+                if (response.isSuccessful) {
+                    AppRepository.schedulingPhase = response.body()?.phase ?: "PHASE_1"
+                }
+            } catch (e: Exception) { Log.e("AppViewModel", "Fetch scheduling phase error", e) }
+        }
+    }
+
+    fun setSchedulingPhase(phase: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.setSchedulingPhase(authToken, SchedulingPhaseDto(phase))
+                if (response.isSuccessful) {
+                    AppRepository.schedulingPhase = phase
+                    onResult(true)
+                } else {
+                    onResult(false)
+                }
+            } catch (e: Exception) {
+                Log.e("AppViewModel", "Set scheduling phase error", e)
+                AppRepository.schedulingPhase = phase
+                onResult(true)
+            }
+        }
+    }
+
+    fun importCourseData(courses: List<CourseImport>, onResult: (List<Pair<String, String>>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val newCredentials = mutableListOf<Pair<String, String>>()
+                val seenUsernames = mutableSetOf<String>()
+
+                for (course in courses) {
+                    val plainUsername = course.email.substringBefore("@").ifBlank { generateUsername(course.lecturer) }
+                    if (seenUsernames.contains(plainUsername)) continue
+                    seenUsernames.add(plainUsername)
+
+                    val alreadyExists = AppRepository.users.any { it.username == plainUsername }
+                    if (!alreadyExists) {
+                        val plainPassword = generatePassword()
+                        val resp = RetrofitClient.instance.addUser(
+                            token = authToken,
+                            user = UserCreateDto(
+                                username = plainUsername,
+                                passwordHash = sha256(plainPassword),
+                                role = "INSTRUCTOR",
+                                fullName = course.lecturer,
+                                email = course.email,
+                                department = course.department
+                            )
+                        )
+                        if (resp.isSuccessful) newCredentials.add(plainUsername to plainPassword)
+                    }
+                }
+
+                val courseDtos = courses.filter { it.duration != -1 }.map { c ->
+                    val lecturerUsername = c.email.substringBefore("@").ifBlank { generateUsername(c.lecturer) }
+                    CourseDto(code = c.code, name = c.name, lecturerUsername = lecturerUsername,
+                        department = c.department, email = c.email, duration = c.duration,
+                        classroomId = c.classroomId, semester = c.semester, studentCount = c.studentCount,
+                        priority = c.priority)
+                }
+                if (courseDtos.isNotEmpty()) RetrofitClient.instance.importCourses(authToken, courseDtos)
+
+                val userResponse = RetrofitClient.instance.getUsers(authToken)
+                if (userResponse.isSuccessful) AppRepository.syncUsers(userResponse.body() ?: emptyList())
+
+                val courseResponse = RetrofitClient.instance.getCourses(authToken)
+                if (courseResponse.isSuccessful) AppRepository.syncCourses(courseResponse.body() ?: emptyList())
+
+                val scheduleResponse = RetrofitClient.instance.getAllSchedules(authToken)
+                if (scheduleResponse.isSuccessful) {
+                    scheduleResponse.body()?.forEach { dto ->
+                        AppRepository.syncSchedule(dto.instructorUsername, dto.slots)
+                    }
+                }
+
+                onResult(newCredentials)
+            } catch (e: Exception) {
+                Log.e("AppViewModel", "Import error", e)
+                onResult(emptyList())
+            }
+        }
+    }
+
+    fun clearMustChangePassword() {
+        mustChangePassword = false
+    }
+
+    fun changePassword(currentPassword: String, newPassword: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.changePassword(
+                    token = authToken,
+                    username = currentUserName,
+                    request = com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ChangePasswordRequest(
+                        currentPasswordHash = sha256(currentPassword),
+                        newPasswordHash = sha256(newPassword)
+                    )
+                )
+                if (response.isSuccessful) {
+                    onResult(true, null)
+                } else {
+                    onResult(false, "Current password is incorrect")
+                }
+            } catch (e: Exception) {
+                onResult(false, e.localizedMessage)
+            }
+        }
+    }
+
+    fun addUser(username: String, password: String, role: String, fullName: String, email: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.addUser(
+                    token = authToken,
+                    user = UserCreateDto(username = username, passwordHash = sha256(password),
+                        role = role, fullName = fullName, email = email, department = "")
+                )
+                if (response.isSuccessful) {
+                    val userResponse = RetrofitClient.instance.getUsers(authToken)
+                    if (userResponse.isSuccessful) AppRepository.syncUsers(userResponse.body() ?: emptyList())
+                    onResult(true, null)
+                } else {
+                    onResult(false, "Kullanıcı eklenemedi: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                onResult(false, e.localizedMessage)
+            }
+        }
+    }
+
+    fun deleteUser(username: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.deleteUser(token = authToken, username = username)
+                if (response.isSuccessful) {
+                    AppRepository.users.removeAll { it.username == username }
+                    onResult(true, null)
+                } else {
+                    onResult(false, "Kullanıcı silinemedi: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                onResult(false, e.localizedMessage)
+            }
+        }
+    }
+
+    fun updateUser(username: String, fullName: String, email: String, role: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.updateUser(
+                    token = authToken,
+                    username = username,
+                    user = UserUpdateDto(role = role, fullName = fullName, email = email, department = "")
+                )
+                if (response.isSuccessful) {
+                    val userResponse = RetrofitClient.instance.getUsers(authToken)
+                    if (userResponse.isSuccessful) AppRepository.syncUsers(userResponse.body() ?: emptyList())
+                    onResult(true, null)
+                } else {
+                    onResult(false, "Güncelleme başarısız: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                onResult(false, e.localizedMessage)
+            }
+        }
+    }
+
+    fun resetUserPassword(username: String, newPassword: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.adminResetPassword(
+                    token = authToken,
+                    username = username,
+                    request = AdminResetPasswordRequest(newPasswordHash = sha256(newPassword))
+                )
+                if (response.isSuccessful) onResult(true, null)
+                else onResult(false, "Şifre sıfırlanamadı: ${response.code()}")
+            } catch (e: Exception) {
+                onResult(false, e.localizedMessage)
+            }
+        }
+    }
+
+    fun deleteCourse(code: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.deleteCourse(token = authToken, code = code)
+                if (response.isSuccessful) {
+                    AppRepository.courseImports.removeAll { it.code == code }
+                    AppRepository.users.forEachIndexed { index, user ->
+                        if (user.courses.any { it.code == code }) {
+                            AppRepository.users[index] = user.copy(courses = user.courses.filter { it.code != code }.toMutableList())
+                        }
+                    }
+                    onResult(true)
+                } else onResult(false)
+            } catch (e: Exception) { onResult(false) }
+        }
+    }
+
+    fun addClassroom(classroom: Classroom, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.addClassroom(
+                    token = authToken,
+                    classroom = com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ClassroomDto(
+                        id = classroom.id, roomCode = classroom.roomCode, capacity = classroom.capacity)
+                )
+                if (response.isSuccessful) {
+                    AppRepository.classrooms.add(classroom)
+                    onResult(true, null)
+                } else {
+                    onResult(false, "Eklenemedi: ${response.code()}")
+                }
+            } catch (e: Exception) { onResult(false, e.localizedMessage) }
+        }
+    }
+
+    fun deleteClassroom(id: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.deleteClassroom(token = authToken, id = id)
+                if (response.isSuccessful) {
+                    AppRepository.classrooms.removeAll { it.id == id }
+                    onResult(true, null)
+                } else {
+                    onResult(false, "Silinemedi: ${response.code()}")
+                }
+            } catch (e: Exception) { onResult(false, e.localizedMessage) }
+        }
+    }
+
+    fun importClassrooms(classrooms: List<Classroom>, onResult: (Int, Int) -> Unit) {
+        viewModelScope.launch {
+            var saved = 0; var skipped = 0
+            for (classroom in classrooms) {
+                if (AppRepository.classrooms.any { it.roomCode.equals(classroom.roomCode, ignoreCase = true) }) {
+                    skipped++; continue
+                }
+                try {
+                    val response = RetrofitClient.instance.addClassroom(
+                        token = authToken,
+                        classroom = com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ClassroomDto(
+                            id = classroom.id, roomCode = classroom.roomCode, capacity = classroom.capacity)
+                    )
+                    if (response.isSuccessful) { AppRepository.classrooms.add(classroom); saved++ }
+                    else skipped++
+                } catch (e: Exception) { skipped++ }
+            }
+            onResult(saved, skipped)
+        }
+    }
+
+    fun saveSchedule(username: String, draftSchedule: Map<String, SnapshotStateMap<String, CourseImport?>>, historyEntries: List<ScheduleChange> = emptyList()) {
+        viewModelScope.launch {
+            try {
+                val flatSlots = mutableMapOf<String, CourseDto?>()
+                draftSchedule.forEach { (day, dayMap) ->
+                    dayMap.forEach { (slot, course) ->
+                        if (course != null) {
+                            flatSlots["${day}_${slot}"] = CourseDto(
+                                code = course.code, name = course.name,
+                                lecturerUsername = AppRepository.users.find { u -> u.courses.any { it.code == course.code } }?.username,
+                                department = course.department, email = course.email,
+                                duration = course.duration, classroomId = course.classroomId,
+                                semester = course.semester, studentCount = course.studentCount,
+                                priority = course.priority
+                            )
+                        }
+                    }
+                }
+                RetrofitClient.instance.updateSchedule(authToken, username, ScheduleDto(username, flatSlots))
+
+                historyEntries.forEach { entry ->
+                    try {
+                        RetrofitClient.instance.addHistory(
+                            token = authToken,
+                            body = ScheduleHistoryDto(
+                                changedBy = entry.changedBy,
+                                instructorUsername = entry.instructorUsername,
+                                instructorFullName = entry.instructorFullName,
+                                day = entry.day,
+                                timeSlot = entry.timeSlot,
+                                previousCourseCode = entry.previousCourse?.code,
+                                newCourseCode = entry.newCourse?.code
+                            )
+                        )
+                    } catch (e: Exception) { Log.e("AppViewModel", "Add history error", e) }
+                }
+            } catch (e: Exception) { Log.e("AppViewModel", "Save schedule error", e) }
+        }
+    }
+
+    fun updateAvatar(username: String, dataUrl: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.updateAvatar(
+                    token = authToken,
+                    username = username,
+                    body = AvatarUpdateDto(avatarUrl = dataUrl)
+                )
+                if (response.isSuccessful) {
+                    val idx = AppRepository.users.indexOfFirst { it.username == username }
+                    if (idx != -1) AppRepository.users[idx] = AppRepository.users[idx].copy(avatarUri = dataUrl)
+                    onResult(true)
+                } else onResult(false)
+            } catch (e: Exception) {
+                Log.e("AppViewModel", "Update avatar error", e)
+                onResult(false)
+            }
+        }
+    }
+
+    fun markNotificationRead(id: String) {
+        viewModelScope.launch {
+            try {
+                RetrofitClient.instance.markNotificationRead(authToken, id)
+                val idx = AppRepository.notifications.indexOfFirst { it.id == id }
+                if (idx != -1) AppRepository.notifications[idx] = AppRepository.notifications[idx].copy(isRead = true)
+            } catch (e: Exception) { Log.e("AppViewModel", "Mark notification read error", e) }
+        }
+    }
+
+    fun submitAvailability(username: String, slots: Map<String, Set<String>>, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.submitAvailability(
+                    token = authToken, username = username,
+                    body = AvailabilityDto(instructorUsername = username, slots = slots.mapValues { it.value.toList() })
+                )
+                if (response.isSuccessful) {
+                    AppRepository.availabilities.removeAll { it.instructorName == username }
+                    AppRepository.availabilities.add(Availability(instructorName = username, slots = slots))
+                    onResult(true)
+                } else onResult(false)
+            } catch (e: Exception) { onResult(false) }
+        }
+    }
+
+    fun sendNotification(recipientUsername: String, text: String) {
+        viewModelScope.launch {
+            try {
+                RetrofitClient.instance.sendNotification(
+                    token = authToken,
+                    body = NotificationDto(recipientUsername = recipientUsername, text = text)
+                )
+            } catch (e: Exception) { Log.e("AppViewModel", "Send notification error", e) }
+        }
+    }
+
+    fun refreshAvailabilities() {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.getAllAvailabilities(authToken)
+                if (response.isSuccessful) AppRepository.syncAvailabilities(response.body() ?: emptyList())
+            } catch (e: Exception) { Log.e("AppViewModel", "Refresh availabilities error", e) }
+        }
+    }
+
+    fun refreshNotifications() {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.getNotifications(authToken)
+                if (response.isSuccessful) AppRepository.syncNotifications(response.body() ?: emptyList())
+            } catch (e: Exception) { Log.e("AppViewModel", "Refresh notifications error", e) }
+        }
+    }
+
+    fun refreshInstructorData() {
+        viewModelScope.launch {
+            try {
+                val notifResponse = RetrofitClient.instance.getNotifications(authToken)
+                if (notifResponse.isSuccessful) AppRepository.syncNotifications(notifResponse.body() ?: emptyList())
+                val scheduleResponse = RetrofitClient.instance.getAllSchedules(authToken)
+                if (scheduleResponse.isSuccessful) {
+                    scheduleResponse.body()?.forEach { dto ->
+                        AppRepository.syncSchedule(dto.instructorUsername, dto.slots)
+                    }
+                }
+                val msgResponse = RetrofitClient.instance.getMessages(token = authToken, otherUsername = "admin")
+                if (msgResponse.isSuccessful) AppRepository.syncMessages(msgResponse.body() ?: emptyList(), "admin")
+            } catch (e: Exception) { Log.e("AppViewModel", "Refresh instructor data error", e) }
+        }
+    }
+
+    fun markMessagesRead(sender: String) {
+        AppRepository.markAllMessagesReadFrom(sender)
+        viewModelScope.launch {
+            try {
+                RetrofitClient.instance.markMessagesRead(authToken, sender)
+            } catch (e: Exception) { Log.e("AppViewModel", "Mark messages read error", e) }
+        }
+    }
+
+    fun loadMessages(withUser: String? = null, onResult: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.getMessages(token = authToken, otherUsername = withUser ?: "")
+                if (response.isSuccessful) {
+                    val dtos = response.body() ?: emptyList()
+                    if (withUser != null) AppRepository.syncMessages(dtos, withUser)
+                    else AppRepository.syncAllMessages(dtos)
+                }
+            } catch (e: Exception) {
+                Log.e("AppViewModel", "Load messages error", e)
+            }
+            onResult?.invoke()
+        }
+    }
+
+    fun sendMessage(toUser: String, content: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.sendMessage(
+                    token = authToken,
+                    body = MessageDto(senderUsername = currentUserName, recipientUsername = toUser, content = content)
+                )
+                if (response.isSuccessful) {
+                    response.body()?.let { dto ->
+                        AppRepository.messages.add(
+                            Message(sender = dto.senderUsername, recipient = dto.recipientUsername,
+                                content = dto.content, isRead = dto.isRead,
+                                timestamp = dto.createdAt ?: System.currentTimeMillis())
+                        )
+                    }
+                    onResult(true)
+                } else {
+                    onResult(false)
+                }
+            } catch (e: Exception) {
+                Log.e("AppViewModel", "Send message error", e)
+                onResult(false)
             }
         }
     }
@@ -110,6 +590,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         isLoggedIn = false
         currentUserName = ""
         authToken = ""
+        mustChangePassword = false
         prefs.edit().clear().apply()
     }
 

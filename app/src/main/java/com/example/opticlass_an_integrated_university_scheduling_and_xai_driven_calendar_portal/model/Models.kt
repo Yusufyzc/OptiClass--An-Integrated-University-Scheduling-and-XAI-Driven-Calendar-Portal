@@ -34,14 +34,16 @@ data class CourseImport(
     val department: String,
     val email: String,
     val duration: Int = 1,  // 1-3 hours; -1 = continuation slot marker
-    val classroomId: String? = null
+    val classroomId: String? = null,
+    val semester: Int = 1,
+    val studentCount: Int = 0,
+    val priority: Int = 1
 )
 
 data class Classroom(
     val id: String,
     val roomCode: String,
-    val capacity: Int,
-    val department: String
+    val capacity: Int
 )
 
 data class ScheduleChange(

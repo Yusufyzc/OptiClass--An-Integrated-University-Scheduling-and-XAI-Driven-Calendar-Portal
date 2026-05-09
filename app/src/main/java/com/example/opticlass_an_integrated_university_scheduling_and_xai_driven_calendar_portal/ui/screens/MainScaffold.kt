@@ -16,23 +16,41 @@ import kotlinx.coroutines.launch
 @Composable
 fun OptiClassApp(viewModel: AppViewModel) {
     if (!viewModel.isLoggedIn) {
-        LoginScreen { username, password -> 
-            viewModel.login(username, password) { _, _ -> }
-            true
-        }
+        LoginScreen { username, password, callback -> viewModel.login(username, password, callback) }
     } else {
-        val currentUser = AppRepository.users.find { it.username == viewModel.currentUserName }
-        if (currentUser?.mustChangePassword == true) {
+        if (viewModel.mustChangePassword) {
             ForceChangePasswordScreen(
                 encodedUsername = viewModel.currentUserName,
-                onPasswordChanged = { }
+                onPasswordChanged = { viewModel.clearMustChangePassword() },
+                onChangePassword = { current, new, cb -> viewModel.changePassword(current, new, cb) }
             )
         } else {
             MainScaffold(
                 role = viewModel.userRole,
                 userName = viewModel.currentUserName,
                 onLogout = { viewModel.logout() },
-                viewModel = viewModel
+                onChangePassword = { current, new, cb -> viewModel.changePassword(current, new, cb) },
+                onAddUser = { u, p, r, fn, e, cb -> viewModel.addUser(u, p, r, fn, e, cb) },
+                onDeleteUser = { u, cb -> viewModel.deleteUser(u, cb) },
+                onUpdateUser = { u, fn, e, r, cb -> viewModel.updateUser(u, fn, e, r, cb) },
+                onResetPassword = { u, np, cb -> viewModel.resetUserPassword(u, np, cb) },
+                onImportCourses = { courses, cb -> viewModel.importCourseData(courses, cb) },
+                onDeleteCourse = { code, cb -> viewModel.deleteCourse(code, cb) },
+                onLoadMessages = { withUser, cb -> viewModel.loadMessages(withUser) { cb() } },
+                onLoadAllMessages = { cb -> viewModel.loadMessages(null) { cb() } },
+                onSendMessage = { to, content, cb -> viewModel.sendMessage(to, content, cb) },
+                onMarkMessagesRead = { sender -> viewModel.markMessagesRead(sender) },
+                onSubmitAvailability = { u, s, cb -> viewModel.submitAvailability(u, s, cb) },
+                onSaveSchedule = { u, d, h -> viewModel.saveSchedule(u, d, h) },
+                onMarkNotificationRead = { id -> viewModel.markNotificationRead(id) },
+                onUpdateAvatar = { dataUrl, cb -> viewModel.updateAvatar(viewModel.currentUserName, dataUrl, cb) },
+                onSendNotification = { r, t -> viewModel.sendNotification(r, t) },
+                onAddClassroom = { c, cb -> viewModel.addClassroom(c, cb) },
+                onDeleteClassroom = { id, cb -> viewModel.deleteClassroom(id, cb) },
+                onImportClassrooms = { list, cb -> viewModel.importClassrooms(list, cb) },
+                onRefreshInstructorData = { viewModel.refreshInstructorData() },
+                onRefreshAvailabilities = { viewModel.refreshAvailabilities() },
+                onSetSchedulingPhase = { phase, cb -> viewModel.setSchedulingPhase(phase, cb) }
             )
         }
     }
@@ -40,7 +58,33 @@ fun OptiClassApp(viewModel: AppViewModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit, viewModel: AppViewModel) {
+fun MainScaffold(
+    role: UserRole,
+    userName: String,
+    onLogout: () -> Unit,
+    onChangePassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> },
+    onAddUser: (String, String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _, _ -> },
+    onDeleteUser: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
+    onUpdateUser: (String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _ -> },
+    onResetPassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> },
+    onImportCourses: (List<CourseImport>, (List<Pair<String, String>>) -> Unit) -> Unit = { _, _ -> },
+    onDeleteCourse: (String, (Boolean) -> Unit) -> Unit = { _, _ -> },
+    onLoadMessages: (withUser: String, () -> Unit) -> Unit = { _, _ -> },
+    onLoadAllMessages: (() -> Unit) -> Unit = { _ -> },
+    onSendMessage: (toUser: String, content: String, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onMarkMessagesRead: (sender: String) -> Unit = { _ -> },
+    onSubmitAvailability: (username: String, slots: Map<String, Set<String>>, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onSaveSchedule: (username: String, draft: Map<String, androidx.compose.runtime.snapshots.SnapshotStateMap<String, CourseImport?>>, historyEntries: List<ScheduleChange>) -> Unit = { _, _, _ -> },
+    onMarkNotificationRead: (id: String) -> Unit = { _ -> },
+    onUpdateAvatar: (dataUrl: String, onResult: (Boolean) -> Unit) -> Unit = { _, _ -> },
+    onSendNotification: (recipientUsername: String, text: String) -> Unit = { _, _ -> },
+    onAddClassroom: (Classroom, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
+    onDeleteClassroom: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
+    onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> },
+    onRefreshInstructorData: () -> Unit = {},
+    onRefreshAvailabilities: () -> Unit = {},
+    onSetSchedulingPhase: (String, (Boolean) -> Unit) -> Unit = { _, _ -> }
+) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -51,14 +95,26 @@ fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit, viewMod
     val unreadMsgCount = AppRepository.messages.count { it.recipient == userName && !it.isRead }
     val unreadNotifCount = AppRepository.notifications.count { !it.isRead && it.recipientName == userName }
 
-    var lastMessageCount by remember { mutableIntStateOf(AppRepository.messages.size) }
-    LaunchedEffect(AppRepository.messages.size) {
-        if (AppRepository.messages.size > lastMessageCount) {
-            val lastMsg = AppRepository.messages.last()
-            if (lastMsg.recipient == userName) {
+    val latestMsgTimestamp = AppRepository.messages
+        .filter { it.recipient == userName }
+        .maxOfOrNull { it.timestamp } ?: 0L
+    var lastKnownTimestamp by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(latestMsgTimestamp) {
+        if (lastKnownTimestamp == 0L) {
+            lastKnownTimestamp = latestMsgTimestamp
+            return@LaunchedEffect
+        }
+        if (latestMsgTimestamp > lastKnownTimestamp) {
+            val newMsg = AppRepository.messages
+                .filter { it.recipient == userName && it.timestamp > lastKnownTimestamp }
+                .maxByOrNull { it.timestamp }
+            lastKnownTimestamp = latestMsgTimestamp
+            if (newMsg != null) {
+                val senderName = AppRepository.users.find { it.username == newMsg.sender }?.fullName
+                    ?: newMsg.sender
                 scope.launch {
                     val result = snackbarHostState.showSnackbar(
-                        message = "New message from ${decodeUsername(lastMsg.sender)}",
+                        message = "New message from $senderName",
                         actionLabel = "View",
                         duration = SnackbarDuration.Short
                     )
@@ -68,7 +124,6 @@ fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit, viewMod
                 }
             }
         }
-        lastMessageCount = AppRepository.messages.size
     }
 
     if (showLogoutDialog) {
@@ -174,8 +229,7 @@ fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit, viewMod
                                                 },
                                                 onClick = {
                                                     showNotificationMenu = false
-                                                    val idx = AppRepository.notifications.indexOfFirst { it.id == notif.id }
-                                                    if (idx != -1) AppRepository.notifications[idx] = notif.copy(isRead = true)
+                                                    onMarkNotificationRead(notif.id)
                                                 }
                                             )
                                         }
@@ -193,29 +247,65 @@ fun MainScaffold(role: UserRole, userName: String, onLogout: () -> Unit, viewMod
             Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
                 when {
                     role == UserRole.ADMIN && currentDestination == AppDestinations.MAIN_PAGE ->
-                        AdminMainPage(userName, viewModel)
+                        AdminMainPage(
+                            adminName = userName,
+                            onLoadMessages = onLoadMessages,
+                            onLoadAllMessages = onLoadAllMessages,
+                            onSendMessage = onSendMessage,
+                            onMarkMessagesRead = onMarkMessagesRead
+                        )
                     role == UserRole.INSTRUCTOR && currentDestination == AppDestinations.MAIN_PAGE ->
-                        InstructorMainPage(userName, onNavigate = { currentDestination = it }, onShowNotifications = { showNotificationMenu = true }, viewModel = viewModel)
+                        InstructorMainPage(userName, onNavigate = { currentDestination = it }, onShowNotifications = { showNotificationMenu = true }, onRefresh = onRefreshInstructorData)
                     role == UserRole.INSTRUCTOR && currentDestination == AppDestinations.NOTIFICATIONS ->
-                        ChatBox(userName, encodeUsername("admin"), viewModel)
+                        ChatBox(
+                            currentUserName = userName,
+                            targetUserName = "admin",
+                            onLoadMessages = onLoadMessages,
+                            onSendMessage = onSendMessage,
+                            onMarkMessagesRead = onMarkMessagesRead
+                        )
                     currentDestination == AppDestinations.MY_AVAILABILITY ->
-                        MyAvailabilityPage(userName, snackbarHostState, viewModel)
+                        MyAvailabilityPage(
+                            userName, snackbarHostState,
+                            onSendMessage = onSendMessage,
+                            onSubmitAvailability = onSubmitAvailability
+                        )
                     currentDestination == AppDestinations.MY_LECTURES ->
-                        MyLecturesPage(userName, viewModel)
+                        MyLecturesPage(userName)
                     currentDestination == AppDestinations.MY_SCHEDULE ->
-                        MySchedulePage(userName, viewModel)
+                        MySchedulePage(userName)
                     currentDestination == AppDestinations.INSTRUCTOR_AVAILABILITY ->
-                        InstructorAvailabilityAdminPage()
+                        InstructorAvailabilityAdminPage(onRefresh = onRefreshAvailabilities)
                     currentDestination == AppDestinations.DATA_IMPORT ->
-                        DataImportPage(snackbarHostState, viewModel)
+                        DataImportPage(
+                            snackbarHostState,
+                            onImport = onImportCourses,
+                            onDeleteCourse = onDeleteCourse
+                        )
                     currentDestination == AppDestinations.USER_TRANSACTIONS ->
-                        UserTransactionsPage(userName, viewModel)
+                        UserTransactionsPage(
+                            currentUserName = userName,
+                            onAddUser = onAddUser,
+                            onDeleteUser = onDeleteUser,
+                            onUpdateUser = onUpdateUser,
+                            onResetPassword = onResetPassword
+                        )
                     currentDestination == AppDestinations.UPDATE_CALENDAR ->
-                        UpdateCalendarPage(snackbarHostState, userName, viewModel)
+                        UpdateCalendarPage(
+                            snackbarHostState, userName,
+                            onSaveSchedule = { u, d, h -> onSaveSchedule(u, d, h) },
+                            onSendNotification = onSendNotification,
+                            onSetSchedulingPhase = onSetSchedulingPhase
+                        )
                     currentDestination == AppDestinations.CLASSROOMS ->
-                        ClassroomsPage(snackbarHostState, viewModel)
+                        ClassroomsPage(
+                            snackbarHostState,
+                            onAddClassroom = onAddClassroom,
+                            onDeleteClassroom = onDeleteClassroom,
+                            onImportClassrooms = onImportClassrooms
+                        )
                     currentDestination == AppDestinations.SETTINGS ->
-                        SettingsPage(userName, viewModel)
+                        SettingsPage(userName, onChangePassword = onChangePassword, onUpdateAvatar = onUpdateAvatar)
                     else -> GenericPage(currentDestination.label)
                 }
             }

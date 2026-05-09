@@ -76,6 +76,9 @@ CREATE TABLE public.courses (
     email text DEFAULT ''::text,
     duration integer DEFAULT 1,
     classroom_id text,
+    semester integer DEFAULT 1,
+    student_count integer DEFAULT 0,
+    priority integer DEFAULT 1,
     imported_at timestamp with time zone DEFAULT now()
 );
 

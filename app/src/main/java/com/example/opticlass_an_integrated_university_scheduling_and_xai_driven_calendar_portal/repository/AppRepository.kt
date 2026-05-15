@@ -33,7 +33,7 @@ object AppRepository {
         users.forEach { user ->
             DAYS.forEach { day ->
                 user.schedule[day]?.forEach { (slot, course) ->
-                    if (course != null && course.department == "COMMON" && course.duration != -1) {
+                    if (course != null && course.department == "COMMON") {
                         result.getOrPut(day) { mutableSetOf() }.add(slot)
                     }
                 }
@@ -136,7 +136,8 @@ object AppRepository {
                     duration = dto.duration,
                     classroomId = dto.classroomId,
                     semester = dto.semester,
-                    studentCount = dto.studentCount
+                    studentCount = dto.studentCount,
+                    priority = dto.priority
                 )
                 courseImports.add(course)
                 dto.lecturerUsername?.let { username ->
@@ -169,7 +170,8 @@ object AppRepository {
                     newSchedule[day]?.set(slot, dto?.let { d ->
                         CourseImport(code = d.code, name = d.name, lecturer = d.lecturerUsername ?: "",
                             department = d.department, email = d.email, duration = d.duration,
-                            classroomId = d.classroomId, semester = d.semester, studentCount = d.studentCount)
+                            classroomId = d.classroomId, semester = d.semester, studentCount = d.studentCount,
+                            priority = d.priority)
                     })
                 }
             }

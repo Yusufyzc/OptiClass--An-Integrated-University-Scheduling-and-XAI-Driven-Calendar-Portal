@@ -406,10 +406,11 @@ private suspend fun importExcelData(context: Context, uri: Uri): List<CourseImpo
                 val email = formatter.formatCellValue(row.getCell(4)).trim()
                 val semester = formatter.formatCellValue(row.getCell(5)).trim().toIntOrNull() ?: 1
                 val studentCount = formatter.formatCellValue(row.getCell(6)).trim().toIntOrNull() ?: 0
+                val priority = formatter.formatCellValue(row.getCell(7)).trim().toIntOrNull() ?: 1
 
                 if (code.isNotEmpty() && name.isNotEmpty() && isValidEmail(email)) {
                     importedList.add(CourseImport(code, name, lecturer, department, email,
-                        semester = semester, studentCount = studentCount))
+                        semester = semester, studentCount = studentCount, priority = priority))
                 }
             }
 

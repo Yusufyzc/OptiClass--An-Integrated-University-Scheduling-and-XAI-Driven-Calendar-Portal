@@ -36,7 +36,8 @@ data class CourseImport(
     val duration: Int = 1,  // 1-3 hours; -1 = continuation slot marker
     val classroomId: String? = null,
     val semester: Int = 1,
-    val studentCount: Int = 0
+    val studentCount: Int = 0,
+    val priority: Int = 1
 )
 
 data class Classroom(

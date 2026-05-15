@@ -216,7 +216,8 @@ data class CourseDto(
     val duration: Int,
     val classroomId: String?,
     val semester: Int = 1,
-    val studentCount: Int = 0
+    val studentCount: Int = 0,
+    val priority: Int = 1
 )
 
 data class SchedulingPhaseDto(val phase: String)

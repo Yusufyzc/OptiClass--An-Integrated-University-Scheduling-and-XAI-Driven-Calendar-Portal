@@ -169,14 +169,37 @@ fun UpdateCalendarPage(
                 map
             }
 
+            val semesterBlockedSlots: Set<Pair<String, String>> = if (selectedCourseToAssign == null) emptySet()
+            else {
+                val blocked = mutableSetOf<Pair<String, String>>()
+                val newCourse = selectedCourseToAssign!!
+                DAYS.forEach { day ->
+                    TIME_SLOTS.forEach { slot ->
+                        val hasConflict = AppRepository.users.filter { it.username != user.username }.any { u ->
+                            val slotCourse = u.schedule[day]?.get(slot)
+                            if (slotCourse == null) false
+                            else if (slotCourse.semester != newCourse.semester) false
+                            else newCourse.department == "COMMON" ||
+                                slotCourse.department == "COMMON" ||
+                                slotCourse.department == newCourse.department
+                        }
+                        if (hasConflict) blocked.add(day to slot)
+                    }
+                }
+                blocked
+            }
+
             Text("Assigned Courses (Tap to select, then tap grid to assign):", style = MaterialTheme.typography.titleSmall)
             Spacer(modifier = Modifier.height(8.dp))
 
+            val sortedCourses = user.courses.sortedWith(
+                compareByDescending<CourseImport> { it.priority }.thenByDescending { it.studentCount }
+            )
             LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(user.courses) { course ->
+                items(sortedCourses) { course ->
                     CourseItemSelectable(
                         course = course,
                         isSelected = selectedCourseToAssign == course,
@@ -191,6 +214,7 @@ fun UpdateCalendarPage(
 
             SchedulingGridEnhanced(
                 DAYS, TIME_SLOTS, availableSlots, draftSchedule, selectedCourseToAssign,
+                semesterBlockedSlots = semesterBlockedSlots,
                 onCellClick = { day, slot ->
                     if (selectedCourseToAssign != null) {
                         showAssignDialog = day to slot
@@ -219,10 +243,14 @@ fun UpdateCalendarPage(
                     }
                 }
                 val semesterConflict = selectedCourseToAssign != null && validSlots.any { s ->
-                    AppRepository.users.any { u ->
+                    val newCourse = selectedCourseToAssign!!
+                    AppRepository.users.filter { it.username != user.username }.any { u ->
                         val slotCourse = u.schedule[reqDay]?.get(s)
-                        slotCourse != null && slotCourse.department == "COMMON" && slotCourse.duration != -1 &&
-                            slotCourse.semester == selectedCourseToAssign!!.semester
+                        if (slotCourse == null) return@any false
+                        if (slotCourse.semester != newCourse.semester) return@any false
+                        newCourse.department == "COMMON" ||
+                            slotCourse.department == "COMMON" ||
+                            slotCourse.department == newCourse.department
                     }
                 }
                 val minCapacity = selectedCourseToAssign?.studentCount ?: 0
@@ -346,8 +374,13 @@ fun UpdateCalendarPage(
                             }
                             if (semesterConflict) {
                                 Spacer(modifier = Modifier.height(8.dp))
+                                val newCourse = selectedCourseToAssign!!
+                                val conflictDesc = if (newCourse.department == "COMMON")
+                                    "This COMMON course conflicts with all Semester ${newCourse.semester} courses at this time."
+                                else
+                                    "A Semester ${newCourse.semester} course from ${newCourse.department} or a COMMON course is already scheduled at this time."
                                 Text(
-                                    "A COMMON course with the same semester is scheduled at this time. Same-semester students will conflict.",
+                                    conflictDesc,
                                     color = MaterialTheme.colorScheme.error,
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -597,6 +630,7 @@ fun SchedulingGridEnhanced(
     availableSlots: Map<String, Set<String>>,
     draftSchedule: MutableMap<String, SnapshotStateMap<String, CourseImport?>>,
     selectedCourse: CourseImport?,
+    semesterBlockedSlots: Set<Pair<String, String>> = emptySet(),
     onCellClick: (String, String) -> Unit,
     onSlotCleared: () -> Unit = {}
 ) {
@@ -628,24 +662,36 @@ fun SchedulingGridEnhanced(
                             val isAvailable = availableSlots[day]?.contains(slot) == true
                             val scheduledCourse = draftSchedule[day]?.get(slot)
                             val isContinuation = scheduledCourse?.duration == -1
+                            val isSemesterBlocked = semesterBlockedSlots.contains(day to slot)
 
                             Box(
                                 modifier = Modifier
                                     .width(65.dp)
                                     .height(50.dp)
-                                    .border(0.5.dp, Color.LightGray)
+                                    .border(
+                                        width = if (isSemesterBlocked) 1.dp else 0.5.dp,
+                                        color = if (isSemesterBlocked) Color.Red else Color.LightGray
+                                    )
                                     .background(
                                         when {
+                                            isSemesterBlocked -> Color.Red.copy(alpha = 0.15f)
                                             isContinuation -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                                             scheduledCourse != null -> MaterialTheme.colorScheme.primaryContainer
                                             isAvailable -> Color.Green.copy(alpha = 0.1f)
                                             else -> Color.Red.copy(alpha = 0.05f)
                                         }
                                     )
-                                    .clickable(enabled = !isContinuation) { onCellClick(day, slot) },
+                                    .clickable(enabled = !isContinuation && !isSemesterBlocked) { onCellClick(day, slot) },
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (isContinuation) {
+                                if (isSemesterBlocked) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = Color.Red.copy(alpha = 0.7f)
+                                    )
+                                } else if (isContinuation) {
                                     val roomCode = scheduledCourse!!.classroomId?.let { id ->
                                         AppRepository.classrooms.find { it.id == id }?.roomCode
                                     }

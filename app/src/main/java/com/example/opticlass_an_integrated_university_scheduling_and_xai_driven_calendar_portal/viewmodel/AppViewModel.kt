@@ -207,7 +207,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     val lecturerUsername = c.email.substringBefore("@").ifBlank { generateUsername(c.lecturer) }
                     CourseDto(code = c.code, name = c.name, lecturerUsername = lecturerUsername,
                         department = c.department, email = c.email, duration = c.duration,
-                        classroomId = c.classroomId, semester = c.semester, studentCount = c.studentCount)
+                        classroomId = c.classroomId, semester = c.semester, studentCount = c.studentCount,
+                        priority = c.priority)
                 }
                 if (courseDtos.isNotEmpty()) RetrofitClient.instance.importCourses(authToken, courseDtos)
 
@@ -414,7 +415,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                                 lecturerUsername = AppRepository.users.find { u -> u.courses.any { it.code == course.code } }?.username,
                                 department = course.department, email = course.email,
                                 duration = course.duration, classroomId = course.classroomId,
-                                semester = course.semester, studentCount = course.studentCount
+                                semester = course.semester, studentCount = course.studentCount,
+                                priority = course.priority
                             )
                         }
                     }

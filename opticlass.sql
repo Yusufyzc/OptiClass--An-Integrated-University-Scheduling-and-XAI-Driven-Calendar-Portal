@@ -72,13 +72,17 @@ CREATE TABLE public.courses (
     code text NOT NULL,
     name text NOT NULL,
     lecturer_username text,
-    department text DEFAULT ''::text,
-    email text DEFAULT ''::text,
+    department text DEFAULT ''::text NOT NULL,
+    email text DEFAULT ''::text NOT NULL,
     duration integer DEFAULT 1,
     classroom_id text,
     semester integer DEFAULT 1,
     student_count integer DEFAULT 0,
     priority integer DEFAULT 1,
+    lecture_hours integer DEFAULT 0,
+    lab_hours integer DEFAULT 0,
+    lecture_assigned boolean DEFAULT false,
+    lab_assigned boolean DEFAULT NULL,
     imported_at timestamp with time zone DEFAULT now()
 );
 
@@ -215,6 +219,18 @@ CREATE TABLE public.schedules (
 ALTER TABLE public.schedules OWNER TO postgres;
 
 --
+-- Name: app_settings; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.app_settings (
+    key text NOT NULL,
+    value text NOT NULL
+);
+
+
+ALTER TABLE public.app_settings OWNER TO postgres;
+
+--
 -- Name: users; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -255,6 +271,15 @@ ALTER TABLE ONLY public.schedule_history ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
+-- Data for Name: app_settings; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.app_settings (key, value) FROM stdin;
+scheduling_phase	PHASE_1
+\.
+
+
+--
 -- Data for Name: availabilities; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
@@ -274,7 +299,7 @@ COPY public.classrooms (id, room_code, capacity, created_at) FROM stdin;
 -- Data for Name: courses; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.courses (code, name, lecturer_username, department, email, duration, classroom_id, imported_at) FROM stdin;
+COPY public.courses (code, name, lecturer_username, department, email, duration, classroom_id, semester, student_count, priority, lecture_hours, lab_hours, lecture_assigned, lab_assigned, imported_at) FROM stdin;
 \.
 
 
@@ -342,6 +367,14 @@ SELECT pg_catalog.setval('public.schedule_history_id_seq', 1, false);
 
 
 --
+-- Name: app_settings app_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.app_settings
+    ADD CONSTRAINT app_settings_pkey PRIMARY KEY (key);
+
+
+--
 -- Name: availabilities availabilities_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -370,7 +403,7 @@ ALTER TABLE ONLY public.classrooms
 --
 
 ALTER TABLE ONLY public.courses
-    ADD CONSTRAINT courses_pkey PRIMARY KEY (code);
+    ADD CONSTRAINT courses_pkey PRIMARY KEY (code, department, email);
 
 
 --

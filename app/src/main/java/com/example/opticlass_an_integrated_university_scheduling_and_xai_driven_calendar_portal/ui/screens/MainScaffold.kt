@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.XAISuggestionResponseDto
 import kotlinx.coroutines.launch
 
 @Composable
@@ -50,7 +51,9 @@ fun OptiClassApp(viewModel: AppViewModel) {
                 onImportClassrooms = { list, cb -> viewModel.importClassrooms(list, cb) },
                 onRefreshInstructorData = { viewModel.refreshInstructorData() },
                 onRefreshAvailabilities = { viewModel.refreshAvailabilities() },
-                onSetSchedulingPhase = { phase, cb -> viewModel.setSchedulingPhase(phase, cb) }
+                onSetSchedulingPhase = { phase, cb -> viewModel.setSchedulingPhase(phase, cb) },
+                onSendChatBotMessage = { msg, cb -> viewModel.sendChatBotMessage(msg, cb) },
+                onSuggestSchedule = { u, code, clsId, dur, type, cb -> viewModel.suggestScheduleSlot(u, code, dur, type, clsId, cb) }
             )
         }
     }
@@ -83,7 +86,9 @@ fun MainScaffold(
     onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> },
     onRefreshInstructorData: () -> Unit = {},
     onRefreshAvailabilities: () -> Unit = {},
-    onSetSchedulingPhase: (String, (Boolean) -> Unit) -> Unit = { _, _ -> }
+    onSetSchedulingPhase: (String, (Boolean) -> Unit) -> Unit = { _, _ -> },
+    onSendChatBotMessage: (String, (String) -> Unit) -> Unit = { _, _ -> },
+    onSuggestSchedule: (username: String, courseCode: String, classroomId: String?, duration: Int, suggestionType: String, onResult: (XAISuggestionResponseDto?) -> Unit) -> Unit = { _, _, _, _, _, _ -> }
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -295,7 +300,8 @@ fun MainScaffold(
                             snackbarHostState, userName,
                             onSaveSchedule = { u, d, h -> onSaveSchedule(u, d, h) },
                             onSendNotification = onSendNotification,
-                            onSetSchedulingPhase = onSetSchedulingPhase
+                            onSetSchedulingPhase = onSetSchedulingPhase,
+                            onSuggestSchedule = onSuggestSchedule
                         )
                     currentDestination == AppDestinations.CLASSROOMS ->
                         ClassroomsPage(
@@ -306,6 +312,8 @@ fun MainScaffold(
                         )
                     currentDestination == AppDestinations.SETTINGS ->
                         SettingsPage(userName, onChangePassword = onChangePassword, onUpdateAvatar = onUpdateAvatar)
+                    currentDestination == AppDestinations.CHATBOT ->
+                        ChatBotPage(onSendMessage = onSendChatBotMessage)
                     else -> GenericPage(currentDestination.label)
                 }
             }

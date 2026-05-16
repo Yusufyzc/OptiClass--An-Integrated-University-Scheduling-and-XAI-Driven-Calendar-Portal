@@ -21,6 +21,10 @@ import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.RetrofitClient
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ScheduleDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ScheduleHistoryDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.ChatBotRequest
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.PhasePrioritiesDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.XAISuggestionRequest
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.XAISuggestionResponseDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.SchedulingPhaseDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.UserCreateDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.UserUpdateDto
@@ -115,6 +119,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val courseResponse = RetrofitClient.instance.getCourses(authToken)
                 if (courseResponse.isSuccessful) AppRepository.syncCourses(courseResponse.body() ?: emptyList())
 
+                // Phase info must be loaded before schedules so recompute uses correct priorities
+                try {
+                    val phaseResponse = RetrofitClient.instance.getSchedulingPhase(authToken)
+                    if (phaseResponse.isSuccessful) {
+                        AppRepository.schedulingPhase = phaseResponse.body()?.phase ?: "PHASE_1"
+                    }
+                } catch (e: Exception) { /* backend henüz hazır değil, PHASE_1 default kalır */ }
+
+                try {
+                    val prioritiesResponse = RetrofitClient.instance.getPhasePriorities(authToken)
+                    if (prioritiesResponse.isSuccessful) {
+                        val list = prioritiesResponse.body()?.phasePriorities ?: emptyList()
+                        AppRepository.phasePriorities.clear()
+                        AppRepository.phasePriorities.addAll(list)
+                    }
+                } catch (e: Exception) { /* backend henüz hazır değil */ }
+
                 val scheduleResponse = RetrofitClient.instance.getAllSchedules(authToken)
                 if (scheduleResponse.isSuccessful) {
                     scheduleResponse.body()?.forEach { dto ->
@@ -131,17 +152,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val historyResponse = RetrofitClient.instance.getHistory(authToken)
                 if (historyResponse.isSuccessful) AppRepository.syncHistory(historyResponse.body() ?: emptyList())
 
-                try {
-                    val phaseResponse = RetrofitClient.instance.getSchedulingPhase(authToken)
-                    if (phaseResponse.isSuccessful) {
-                        AppRepository.schedulingPhase = phaseResponse.body()?.phase ?: "PHASE_1"
-                    }
-                } catch (e: Exception) { /* backend henüz hazır değil, PHASE_1 default kalır */ }
-
                 AppRepository.recomputeCommonCourseSlots()
             } catch (e: Exception) {
                 Log.e("AppViewModel", "Fetch data error", e)
             }
+        }
+    }
+
+    fun fetchPhasePriorities() {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.getPhasePriorities(authToken)
+                if (response.isSuccessful) {
+                    val list = response.body()?.phasePriorities ?: emptyList()
+                    AppRepository.phasePriorities.clear()
+                    AppRepository.phasePriorities.addAll(list)
+                    AppRepository.recomputeCommonCourseSlots()
+                }
+            } catch (e: Exception) { Log.e("AppViewModel", "Fetch phase priorities error", e) }
         }
     }
 
@@ -162,6 +190,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val response = RetrofitClient.instance.setSchedulingPhase(authToken, SchedulingPhaseDto(phase))
                 if (response.isSuccessful) {
                     AppRepository.schedulingPhase = phase
+                    AppRepository.recomputeCommonCourseSlots()
                     onResult(true)
                 } else {
                     onResult(false)
@@ -169,6 +198,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 Log.e("AppViewModel", "Set scheduling phase error", e)
                 AppRepository.schedulingPhase = phase
+                AppRepository.recomputeCommonCourseSlots()
                 onResult(true)
             }
         }
@@ -203,13 +233,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                val courseDtos = courses.filter { it.duration != -1 }.map { c ->
-                    val lecturerUsername = c.email.substringBefore("@").ifBlank { generateUsername(c.lecturer) }
-                    CourseDto(code = c.code, name = c.name, lecturerUsername = lecturerUsername,
-                        department = c.department, email = c.email, duration = c.duration,
-                        classroomId = c.classroomId, semester = c.semester, studentCount = c.studentCount,
-                        priority = c.priority)
-                }
+                val courseDtos = courses
+                    .filter { it.duration != -1 }
+                    .mapNotNull { c ->
+                        val lecturerUsername = c.email.substringBefore("@").ifBlank { generateUsername(c.lecturer) }
+                        val alreadyCourse = AppRepository.courseImports.any { existing ->
+                            existing.code == c.code &&
+                            existing.department == c.department &&
+                            existing.lecturer == lecturerUsername
+                        }
+                        if (alreadyCourse) null else Pair(c, lecturerUsername)
+                    }
+                    .map { (c, lecturerUsername) ->
+                        CourseDto(code = c.code, name = c.name, lecturerUsername = lecturerUsername,
+                            department = c.department, email = c.email, duration = c.duration,
+                            classroomId = c.classroomId, semester = c.semester, studentCount = c.studentCount,
+                            priority = c.priority, lectureHours = c.lectureHours, labHours = c.labHours)
+                    }
                 if (courseDtos.isNotEmpty()) RetrofitClient.instance.importCourses(authToken, courseDtos)
 
                 val userResponse = RetrofitClient.instance.getUsers(authToken)
@@ -224,6 +264,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         AppRepository.syncSchedule(dto.instructorUsername, dto.slots)
                     }
                 }
+
+                try {
+                    val prioritiesResponse = RetrofitClient.instance.getPhasePriorities(authToken)
+                    if (prioritiesResponse.isSuccessful) {
+                        val list = prioritiesResponse.body()?.phasePriorities ?: emptyList()
+                        AppRepository.phasePriorities.clear()
+                        AppRepository.phasePriorities.addAll(list)
+                        AppRepository.recomputeCommonCourseSlots()
+                    }
+                } catch (e: Exception) { Log.e("AppViewModel", "Refresh phase priorities error", e) }
 
                 onResult(newCredentials)
             } catch (e: Exception) {
@@ -412,16 +462,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         if (course != null) {
                             flatSlots["${day}_${slot}"] = CourseDto(
                                 code = course.code, name = course.name,
-                                lecturerUsername = AppRepository.users.find { u -> u.courses.any { it.code == course.code } }?.username,
+                                lecturerUsername = course.lecturer.ifBlank { null },
                                 department = course.department, email = course.email,
                                 duration = course.duration, classroomId = course.classroomId,
                                 semester = course.semester, studentCount = course.studentCount,
-                                priority = course.priority
+                                priority = course.priority, lectureHours = course.lectureHours,
+                                labHours = course.labHours
                             )
                         }
                     }
                 }
                 RetrofitClient.instance.updateSchedule(authToken, username, ScheduleDto(username, flatSlots))
+
+                // Re-fetch courses to get updated lecture_assigned / lab_assigned flags
+                try {
+                    val courseResponse = RetrofitClient.instance.getCourses(authToken)
+                    if (courseResponse.isSuccessful) AppRepository.syncCourses(courseResponse.body() ?: emptyList())
+                } catch (e: Exception) { Log.e("AppViewModel", "Refresh courses after save error", e) }
 
                 historyEntries.forEach { entry ->
                     try {
@@ -582,6 +639,60 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 Log.e("AppViewModel", "Send message error", e)
                 onResult(false)
+            }
+        }
+    }
+
+    fun suggestScheduleSlot(
+        username: String,
+        courseCode: String,
+        duration: Int,
+        suggestionType: String = "lecture",
+        classroomId: String? = null,
+        onResult: (XAISuggestionResponseDto?) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val course = AppRepository.users.find { it.username == username }
+                    ?.courses?.find { it.code == courseCode && it.lecturer == username }
+                    ?: AppRepository.courseImports.find { it.code == courseCode && it.lecturer == username }
+                    ?: AppRepository.courseImports.find { it.code == courseCode }
+                val response = RetrofitClient.instance.suggestSchedule(
+                    token = authToken,
+                    username = username,
+                    body = XAISuggestionRequest(
+                        courseCode = courseCode,
+                        duration = duration,
+                        lectureHours = course?.lectureHours ?: 0,
+                        labHours = course?.labHours ?: 0,
+                        suggestionType = suggestionType,
+                        classroomId = classroomId
+                    )
+                )
+                if (response.isSuccessful) onResult(response.body())
+                else onResult(null)
+            } catch (e: Exception) {
+                Log.e("AppViewModel", "Suggest schedule error", e)
+                onResult(null)
+            }
+        }
+    }
+
+    fun sendChatBotMessage(message: String, onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.sendChatBotMessage(
+                    token = authToken,
+                    body = ChatBotRequest(message = message)
+                )
+                if (response.isSuccessful) {
+                    onResult(response.body()?.response ?: "I didn't understand that.")
+                } else {
+                    onResult("Sorry, I couldn't process your request.")
+                }
+            } catch (e: Exception) {
+                Log.e("AppViewModel", "ChatBot error", e)
+                onResult("Assistant is currently unavailable. Please try again later.")
             }
         }
     }

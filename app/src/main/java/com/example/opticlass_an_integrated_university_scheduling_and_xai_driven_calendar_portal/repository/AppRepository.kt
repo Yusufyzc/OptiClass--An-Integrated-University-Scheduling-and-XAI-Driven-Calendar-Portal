@@ -26,15 +26,33 @@ object AppRepository {
     val availabilityDrafts = mutableStateMapOf<String, Map<String, Set<String>>>()
     val scheduleHistory = mutableStateListOf<ScheduleChange>()
     var schedulingPhase by mutableStateOf("PHASE_1")
+    val phasePriorities = mutableStateListOf<Int>()
     val commonCourseSlots = mutableStateMapOf<String, Set<String>>()
 
+    val currentPhaseIndex: Int get() {
+        val num = schedulingPhase.removePrefix("PHASE_").toIntOrNull() ?: 1
+        return num - 1
+    }
+    val currentPhasePriority: Int get() {
+        val idx = currentPhaseIndex
+        return if (idx < phasePriorities.size) phasePriorities[idx] else -1
+    }
+    val previousPhasePriorities: Set<Int> get() {
+        val idx = currentPhaseIndex
+        return phasePriorities.take(idx).toSet()
+    }
+    val totalPhases: Int get() = phasePriorities.size
+
     fun recomputeCommonCourseSlots() {
+        val prevPriorities = previousPhasePriorities
         val result = mutableMapOf<String, MutableSet<String>>()
-        users.forEach { user ->
-            DAYS.forEach { day ->
-                user.schedule[day]?.forEach { (slot, course) ->
-                    if (course != null && course.department == "COMMON") {
-                        result.getOrPut(day) { mutableSetOf() }.add(slot)
+        if (prevPriorities.isNotEmpty()) {
+            users.forEach { user ->
+                DAYS.forEach { day ->
+                    user.schedule[day]?.forEach { (slot, course) ->
+                        if (course != null && course.priority in prevPriorities) {
+                            result.getOrPut(day) { mutableSetOf() }.add(slot)
+                        }
                     }
                 }
             }
@@ -124,9 +142,12 @@ object AppRepository {
     fun syncCourses(courseDtos: List<CourseDto>) {
         courseImports.clear()
         val coursesByLecturer = mutableMapOf<String, MutableList<CourseImport>>()
+        val seenCourseKeys = mutableSetOf<Triple<String, String, String>>() // (code, dept, lecturerUsername)
 
         courseDtos.forEach { dto ->
             if (dto.duration != -1) {
+                val key = Triple(dto.code, dto.department, dto.lecturerUsername ?: "")
+                if (!seenCourseKeys.add(key)) return@forEach
                 val course = CourseImport(
                     code = dto.code,
                     name = dto.name,
@@ -137,7 +158,11 @@ object AppRepository {
                     classroomId = dto.classroomId,
                     semester = dto.semester,
                     studentCount = dto.studentCount,
-                    priority = dto.priority
+                    priority = dto.priority,
+                    lectureHours = dto.lectureHours,
+                    labHours = dto.labHours,
+                    lectureAssigned = dto.lecture_assigned,
+                    labAssigned = dto.lab_assigned
                 )
                 courseImports.add(course)
                 dto.lecturerUsername?.let { username ->
@@ -171,7 +196,7 @@ object AppRepository {
                         CourseImport(code = d.code, name = d.name, lecturer = d.lecturerUsername ?: "",
                             department = d.department, email = d.email, duration = d.duration,
                             classroomId = d.classroomId, semester = d.semester, studentCount = d.studentCount,
-                            priority = d.priority)
+                            priority = d.priority, lectureHours = d.lectureHours, labHours = d.labHours)
                     })
                 }
             }

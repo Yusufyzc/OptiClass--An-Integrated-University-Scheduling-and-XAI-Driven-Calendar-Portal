@@ -29,10 +29,13 @@ fun MyAvailabilityPage(
     onSubmitAvailability: (username: String, slots: Map<String, Set<String>>, (Boolean) -> Unit) -> Unit = { _, _, _ -> }
 ) {
     val scope = rememberCoroutineScope()
-    val phase = AppRepository.schedulingPhase
-    val isCommonInstructor = AppRepository.users
-        .find { it.username == instructorName }
-        ?.courses?.any { it.department == "COMMON" } == true
+    val currentPhasePriority = AppRepository.currentPhasePriority
+    val currentPhaseIndex = AppRepository.currentPhaseIndex
+
+    val unlockedPriorities = AppRepository.phasePriorities.take(currentPhaseIndex + 1).toSet()
+    val isUnlocked = AppRepository.phasePriorities.isEmpty() ||
+        AppRepository.users.find { it.username == instructorName }
+            ?.courses?.any { it.priority in unlockedPriorities } == true
 
     val initialDraft = AppRepository.availabilityDrafts[instructorName]
         ?: AppRepository.availabilities.find { it.instructorName == instructorName }?.slots
@@ -43,7 +46,8 @@ fun MyAvailabilityPage(
         map
     }
 
-    if (phase == "PHASE_1" && !isCommonInstructor) {
+    if (!isUnlocked && AppRepository.phasePriorities.isNotEmpty()) {
+        val phaseNum = currentPhaseIndex + 1
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -63,7 +67,7 @@ fun MyAvailabilityPage(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Common course scheduling is in progress.\nAvailability form will open once common courses are assigned.",
+                    "Phase $phaseNum (priority $currentPhasePriority) scheduling is in progress.\nAvailability form will open when your priority group is reached.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -77,7 +81,8 @@ fun MyAvailabilityPage(
         Text("Your Availability", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (phase == "PHASE_2") {
+        if (currentPhaseIndex > 0 && AppRepository.commonCourseSlots.isNotEmpty()) {
+            val prevPhaseNum = currentPhaseIndex
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -94,7 +99,7 @@ fun MyAvailabilityPage(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    "Orange slots have common courses scheduled. Assigning same-semester courses at these times is not recommended.",
+                    "Orange slots have Phase 1–$prevPhaseNum courses scheduled. Assigning same-semester courses at these times is not recommended.",
                     fontSize = 11.sp,
                     color = Color(0xFFBF360C)
                 )

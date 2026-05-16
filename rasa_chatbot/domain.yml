@@ -1,0 +1,105 @@
+version: "3.1"
+
+intents:
+  - greet
+  - goodbye
+  - thanks
+  - affirm
+  - deny
+  - ask_what_is_app
+  - ask_navigate_schedule
+  - ask_navigate_availability
+  - ask_navigate_lectures
+  - ask_navigate_settings
+  - ask_navigate_messages
+  - ask_change_password
+  - ask_import_courses
+  - ask_manage_classrooms
+  - ask_manage_users
+  - ask_assign_course
+  - ask_phase_explanation
+  - ask_phase_switch
+  - ask_common_course
+  - ask_availability_admin
+  - ask_send_notification
+  - ask_xai
+  - out_of_scope
+
+responses:
+  utter_greet:
+    - text: "Hello! I'm the OptiClass Assistant 🤖 How can I help you today?"
+    - text: "Hi! I'm here to help you navigate OptiClass. What do you need?"
+
+  utter_goodbye:
+    - text: "Goodbye! Feel free to ask if you need anything else."
+
+  utter_thanks:
+    - text: "You're welcome! Let me know if you need anything else."
+    - text: "Happy to help! Is there anything else you'd like to know?"
+
+  utter_affirm:
+    - text: "Great! Let me know if you have more questions."
+
+  utter_deny:
+    - text: "No problem. Is there something else I can help you with?"
+
+  utter_what_is_app:
+    - text: "OptiClass is a university scheduling system. Admins create and manage course schedules, while instructors submit availability and view their assigned timetables. The system uses a priority-based phase approach to ensure fair and conflict-free scheduling."
+
+  utter_navigate_schedule:
+    - text: "Open the side menu and tap My Schedule. You'll see your full weekly timetable with all assigned courses and their classroom codes."
+
+  utter_navigate_availability:
+    - text: "Open the side menu and tap My Availability. You'll see a weekly grid — tap the time slots when you're free, then press Save & Send to Admin. Note: the form may be locked until your course priority phase is reached."
+
+  utter_navigate_lectures:
+    - text: "Tap My Lectures in the side menu to see all courses assigned to you, including their duration, department, and semester info."
+
+  utter_navigate_settings:
+    - text: "Open the side menu and tap Settings. There you can change your password and upload or update your profile picture."
+
+  utter_navigate_messages:
+    - text: "As an instructor, tap the email icon in the top bar or go to Notifications in the side menu to open the chat with admin."
+
+  utter_change_password:
+    - text: "Go to Settings → tap Change Password. Enter your current password, then your new password twice. Requirements: at least 8 characters, one uppercase letter, one lowercase letter, one number, and one special character (e.g. !@#$)."
+
+  utter_import_courses:
+    - text: "Go to Data Import (admin only). Prepare an Excel (.xlsx) file with exactly 8 columns in this order:\n1. Code  2. Name  3. Lecturer  4. Dept (or COMMON)  5. Email  6. Semester  7. StudentCount  8. Priority\nThen tap Select Excel File and Import."
+
+  utter_manage_classrooms:
+    - text: "Go to Classrooms (admin only). Add rooms manually with a room code and capacity, or import from Excel. To delete a room, tap the trash icon next to it."
+
+  utter_manage_users:
+    - text: "Go to User Transactions (admin only). You can add instructors, edit their info, reset passwords, or delete accounts. Instructor accounts are also created automatically when you import courses."
+
+  utter_assign_course:
+    - text: "Go to Update Calendar (admin only). Select an instructor from the dropdown, then tap a course card to select it. Tap an available green grid cell to open the assignment dialog — choose duration (1–3 hours) and optionally a classroom, then tap Confirm."
+
+  utter_phase_explanation:
+    - text: "The scheduling system uses multiple phases based on course priority values. The number of phases equals the number of distinct priority values in the imported courses. Phase 1 handles the highest-priority courses first. Each phase only activates instructors who have courses at that phase's priority level."
+
+  utter_phase_switch:
+    - text: "In Update Calendar, look for the orange banner showing the current phase. After assigning all courses for the current phase, tap the Phase N+1 button in the banner and confirm. Warning: this action is irreversible."
+
+  utter_common_course:
+    - text: "Common courses have COMMON in the Department column of the Excel import file. These courses are shared across multiple departments, so they typically have the highest priority and are scheduled in Phase 1 to block those time slots for all affected students."
+
+  utter_availability_admin:
+    - text: "Go to Instructor Availability (admin only). You'll see each instructor's submitted availability grid. Use the Refresh button in the top right corner to load the latest submissions."
+
+  utter_send_notification:
+    - text: "In Update Calendar, the system automatically sends a notification to the instructor after you save their schedule. For manual messaging, use the chat feature on the Main Page (Admin inbox)."
+
+  utter_xai:
+    - text: "The XAI (Explainable AI) feature automatically suggests optimal time slots and classrooms for each course. It considers instructor availability, classroom capacity, semester conflicts, and course priority — and explains why each assignment was recommended."
+
+  utter_out_of_scope:
+    - text: "I'm specialized in helping with OptiClass. I can answer questions about schedule, availability, courses, classrooms, users, and phases. Could you rephrase your question?"
+
+  utter_default:
+    - text: "I'm not sure I understood that. You can ask about: schedule, availability, courses, classrooms, users, phases, password, or common courses."
+
+session_config:
+  session_expiration_time: 60
+  carry_over_slots_to_new_session: true

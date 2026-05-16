@@ -57,9 +57,25 @@ fun generateUsername(fullName: String): String {
     return "${base}_$i"
 }
 
+// Returns null if valid, error message string if invalid
+fun validatePassword(password: String): String? = when {
+    password.length < 8 -> "Password must be at least 8 characters"
+    !password.any { it.isUpperCase() } -> "Password must contain at least one uppercase letter"
+    !password.any { it.isLowerCase() } -> "Password must contain at least one lowercase letter"
+    !password.any { it.isDigit() } -> "Password must contain at least one number"
+    !password.any { !it.isLetterOrDigit() } -> "Password must contain at least one special character"
+    else -> null
+}
+
 fun generatePassword(): String {
-    val chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
-    return (1..6).map { chars.random() }.joinToString("")
+    val upper = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+    val lower = "abcdefghjkmnpqrstuvwxyz"
+    val digits = "23456789"
+    val special = "!@#\$%&*"
+    val all = upper + lower + digits + special
+    val mandatory = listOf(upper.random(), lower.random(), digits.random(), special.random())
+    val rest = (1..4).map { all.random() }
+    return (mandatory + rest).shuffled().joinToString("")
 }
 
 private val avatarPalette = listOf(

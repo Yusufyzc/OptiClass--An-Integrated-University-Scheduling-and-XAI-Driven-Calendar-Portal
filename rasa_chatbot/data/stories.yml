@@ -1,0 +1,50 @@
+version: "3.1"
+
+stories:
+  - story: greet then ask about schedule
+    steps:
+      - intent: greet
+      - action: utter_greet
+      - intent: ask_navigate_schedule
+      - action: utter_navigate_schedule
+      - intent: thanks
+      - action: utter_thanks
+
+  - story: greet then ask about availability
+    steps:
+      - intent: greet
+      - action: utter_greet
+      - intent: ask_navigate_availability
+      - action: utter_navigate_availability
+      - intent: goodbye
+      - action: utter_goodbye
+
+  - story: ask about phases then switch
+    steps:
+      - intent: ask_phase_explanation
+      - action: utter_phase_explanation
+      - intent: ask_phase_switch
+      - action: utter_phase_switch
+
+  - story: ask about import then classrooms
+    steps:
+      - intent: ask_import_courses
+      - action: utter_import_courses
+      - intent: ask_manage_classrooms
+      - action: utter_manage_classrooms
+
+  - story: ask about assign course then common course
+    steps:
+      - intent: ask_assign_course
+      - action: utter_assign_course
+      - intent: ask_common_course
+      - action: utter_common_course
+
+  - story: password change flow
+    steps:
+      - intent: ask_change_password
+      - action: utter_change_password
+      - intent: thanks
+      - action: utter_thanks
+      - intent: goodbye
+      - action: utter_goodbye

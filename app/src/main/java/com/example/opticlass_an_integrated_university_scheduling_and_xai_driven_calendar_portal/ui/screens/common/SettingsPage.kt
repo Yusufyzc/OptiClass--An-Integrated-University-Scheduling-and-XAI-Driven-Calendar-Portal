@@ -201,6 +201,11 @@ fun ChangePasswordDialog(onDismiss: () -> Unit, onSave: (String, String, (Boolea
                     singleLine = true,
                     enabled = !isLoading
                 )
+                Text(
+                    "Min 8 chars · uppercase · lowercase · number · special char (!@#\$…)",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 OutlinedTextField(
                     value = confirmPassword,
                     onValueChange = { confirmPassword = it },
@@ -218,8 +223,9 @@ fun ChangePasswordDialog(onDismiss: () -> Unit, onSave: (String, String, (Boolea
         confirmButton = {
             TextButton(
                 onClick = {
+                    val pwError = validatePassword(newPassword)
                     when {
-                        newPassword.length < 6 -> errorMsg = "New password must be at least 6 characters"
+                        pwError != null -> errorMsg = pwError
                         newPassword != confirmPassword -> errorMsg = "Passwords do not match"
                         else -> {
                             isLoading = true

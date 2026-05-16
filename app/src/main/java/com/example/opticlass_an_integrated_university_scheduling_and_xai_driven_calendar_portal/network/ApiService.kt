@@ -161,8 +161,24 @@ interface ApiService {
         @Body body: SchedulingPhaseDto
     ): Response<Unit>
 
+    @GET("settings/phase_priorities")
+    suspend fun getPhasePriorities(@Header("Authorization") token: String): Response<PhasePrioritiesDto>
+
     @GET("common_course_slots")
     suspend fun getCommonCourseSlots(@Header("Authorization") token: String): Response<Map<String, List<String>>>
+
+    @POST("chatbot")
+    suspend fun sendChatBotMessage(
+        @Header("Authorization") token: String,
+        @Body body: ChatBotRequest
+    ): Response<ChatBotResponse>
+
+    @POST("schedule/suggest/{username}")
+    suspend fun suggestSchedule(
+        @Header("Authorization") token: String,
+        @Path("username") username: String,
+        @Body body: XAISuggestionRequest
+    ): Response<XAISuggestionResponseDto>
 }
 
 data class LoginRequest(val username: String, val passwordHash: String)
@@ -217,10 +233,16 @@ data class CourseDto(
     val classroomId: String?,
     val semester: Int = 1,
     val studentCount: Int = 0,
-    val priority: Int = 1
+    val priority: Int = 1,
+    val lectureHours: Int = 0,
+    val labHours: Int = 0,
+    val lecture_assigned: Boolean = false,
+    val lab_assigned: Boolean? = null
 )
 
 data class SchedulingPhaseDto(val phase: String)
+
+data class PhasePrioritiesDto(val phasePriorities: List<Int>)
 
 data class AvailabilityDto(
     val instructorUsername: String,
@@ -257,4 +279,43 @@ data class NotificationDto(
     val recipientUsername: String,
     val text: String,
     val isRead: Boolean = false
+)
+
+data class ChatBotRequest(val message: String)
+
+data class ChatBotResponse(val response: String)
+
+data class XAISuggestionRequest(
+    val courseCode: String,
+    val duration: Int = 1,
+    val lectureHours: Int = 0,
+    val labHours: Int = 0,
+    val suggestionType: String = "lecture",
+    val classroomId: String? = null
+)
+
+data class XAIFeatureExplanationDto(
+    val name: String,
+    val displayName: String,
+    val value: Float,
+    val contribution: Float,
+    val description: String
+)
+
+data class XAISlotSuggestionDto(
+    val day: String,
+    val timeSlot: String,
+    val classroomId: String?,
+    val classroomCode: String?,
+    val score: Float,
+    val features: List<XAIFeatureExplanationDto>,
+    val summary: String
+)
+
+data class XAISuggestionResponseDto(
+    val suggestions: List<XAISlotSuggestionDto>,
+    val courseCode: String,
+    val courseName: String,
+    val algorithmNote: String,
+    val suggestionType: String = "lecture"
 )

@@ -37,7 +37,11 @@ data class CourseImport(
     val classroomId: String? = null,
     val semester: Int = 1,
     val studentCount: Int = 0,
-    val priority: Int = 1
+    val priority: Int = 1,
+    val lectureHours: Int = 0,
+    val labHours: Int = 0,
+    val lectureAssigned: Boolean = false,
+    val labAssigned: Boolean? = null
 )
 
 data class Classroom(
@@ -91,4 +95,5 @@ enum class AppDestinations(
     INSTRUCTOR_AVAILABILITY("Instructor Availability", Icons.AutoMirrored.Filled.List, roleRestriction = UserRole.ADMIN),
     CLASSROOMS("Classrooms", Icons.Default.School, roleRestriction = UserRole.ADMIN),
     SETTINGS("Settings", Icons.Default.Settings),
+    CHATBOT("Assistant", Icons.Default.Chat),
 }

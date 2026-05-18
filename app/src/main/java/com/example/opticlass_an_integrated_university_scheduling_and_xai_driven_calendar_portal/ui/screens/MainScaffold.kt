@@ -257,7 +257,8 @@ fun MainScaffold(
                             onLoadMessages = onLoadMessages,
                             onLoadAllMessages = onLoadAllMessages,
                             onSendMessage = onSendMessage,
-                            onMarkMessagesRead = onMarkMessagesRead
+                            onMarkMessagesRead = onMarkMessagesRead,
+                            onRefresh = { onLoadAllMessages {} }
                         )
                     role == UserRole.INSTRUCTOR && currentDestination == AppDestinations.MAIN_PAGE ->
                         InstructorMainPage(userName, onNavigate = { currentDestination = it }, onShowNotifications = { showNotificationMenu = true }, onRefresh = onRefreshInstructorData)

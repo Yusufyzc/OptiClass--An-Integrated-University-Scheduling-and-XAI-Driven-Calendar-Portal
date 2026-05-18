@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -64,11 +65,10 @@ fun UpdateCalendarPage(
     var suggestionResult by remember { mutableStateOf<XAISuggestionResponseDto?>(null) }
     var expandedSuggestionIndex by remember { mutableIntStateOf(-1) }
     var showSuggestionDialog by remember { mutableStateOf(false) }
-    var labSuggestionPending by remember { mutableStateOf(false) }
+    var assignmentMode by remember { mutableStateOf<String?>(null) }  // "lecture" | "lab" | null
     var selectedClassroom by remember { mutableStateOf<Classroom?>(null) }
     var suggestionClassroomDropdownExpanded by remember { mutableStateOf(false) }
-    LaunchedEffect(selectedCourseToAssign) { labSuggestionPending = false; selectedClassroom = null }
-    var selectedDuration by remember { mutableIntStateOf(1) }
+    LaunchedEffect(selectedCourseToAssign) { assignmentMode = null; selectedClassroom = null }
     var classroomDropdownExpanded by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
@@ -239,42 +239,51 @@ fun UpdateCalendarPage(
 
             if (selectedCourseToAssign != null) {
                 Spacer(modifier = Modifier.height(8.dp))
-                val isLabMode = labSuggestionPending && (selectedCourseToAssign?.labHours ?: 0) > 0
+                val isLabMode = assignmentMode == "lab"
                 val course = selectedCourseToAssign!!
-                val blockHours = if (isLabMode && course.labHours > 0) course.labHours
-                    else if (!isLabMode && course.lectureHours > 0) course.lectureHours
-                    else 0
 
-                if (isLabMode || blockHours > 0) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
+                // Lecture / Lab mode selector
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val lectureSelected = assignmentMode == "lecture"
+                    OutlinedButton(
+                        onClick = { assignmentMode = if (lectureSelected) null else "lecture" },
+                        modifier = Modifier.weight(1f),
+                        border = BorderStroke(1.dp, if (lectureSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = if (lectureSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                            contentColor = if (lectureSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
                     ) {
-                        if (isLabMode) {
-                            Text(
-                                "Lecture placed. Suggesting lab slot.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(end = 8.dp)
+                        Text("Lecture (${course.lectureHours}h)", fontSize = 12.sp, maxLines = 1)
+                    }
+                    if (course.labHours > 0) {
+                        val labSelected = assignmentMode == "lab"
+                        OutlinedButton(
+                            onClick = { assignmentMode = if (labSelected) null else "lab" },
+                            modifier = Modifier.weight(1f),
+                            border = BorderStroke(1.dp, if (labSelected) Color(0xFF6A1B9A) else MaterialTheme.colorScheme.outline),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (labSelected) Color(0xFF6A1B9A).copy(alpha = 0.12f) else Color.Transparent,
+                                contentColor = if (labSelected) Color(0xFF6A1B9A) else MaterialTheme.colorScheme.onSurface
                             )
-                        }
-                        if (blockHours > 0) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = if (isLabMode) Color(0xFF6A1B9A).copy(alpha = 0.1f) else Color(0xFF1565C0).copy(alpha = 0.1f),
-                            ) {
-                                Text(
-                                    "→ ${blockHours}h ${if (isLabMode) "lab" else "lecture"} block",
-                                    fontSize = 10.sp,
-                                    color = if (isLabMode) Color(0xFF6A1B9A) else Color(0xFF1565C0),
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                                )
-                            }
+                        ) {
+                            Text("Lab (${course.labHours}h)", fontSize = 12.sp, maxLines = 1)
                         }
                     }
-                    Spacer(Modifier.height(4.dp))
                 }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (assignmentMode != null)
+                        "Tap a grid cell to assign a ${if (isLabMode) course.labHours else course.lectureHours}h $assignmentMode block"
+                    else
+                        "Select Lecture or Lab to start manual assignment",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
 
                 val suggestionEligibleClassrooms = AppRepository.classrooms.filter { room ->
                     course.studentCount == 0 || room.capacity >= course.studentCount
@@ -312,7 +321,7 @@ fun UpdateCalendarPage(
                             val dur = when {
                                 isLabMode && course.labHours > 0 -> course.labHours
                                 course.lectureHours > 0 -> course.lectureHours
-                                else -> selectedDuration
+                                else -> 1
                             }
                             suggestionLoading = true
                             onSuggestSchedule(user.username, course.code, selectedClassroom?.id, dur, type) { result ->
@@ -352,9 +361,8 @@ fun UpdateCalendarPage(
                 DAYS, TIME_SLOTS, availableSlots, draftSchedule, selectedCourseToAssign,
                 semesterBlockedSlots = semesterBlockedSlots,
                 onCellClick = { day, slot ->
-                    if (selectedCourseToAssign != null) {
+                    if (selectedCourseToAssign != null && assignmentMode != null) {
                         showAssignDialog = day to slot
-                        selectedDuration = 1
                     }
                 },
                 onSlotCleared = { isDirty = true }
@@ -363,7 +371,12 @@ fun UpdateCalendarPage(
             if (showAssignDialog != null) {
                 val (reqDay, reqSlot) = showAssignDialog!!
                 val startIdx = TIME_SLOTS.indexOf(reqSlot)
-                val targetSlots = (0 until selectedDuration).map { TIME_SLOTS.getOrNull(startIdx + it) }
+                val appliedDuration = when {
+                    assignmentMode == "lab" && (selectedCourseToAssign?.labHours ?: 0) > 0 -> selectedCourseToAssign!!.labHours
+                    (selectedCourseToAssign?.lectureHours ?: 0) > 0 -> selectedCourseToAssign!!.lectureHours
+                    else -> 1
+                }
+                val targetSlots = (0 until appliedDuration).map { TIME_SLOTS.getOrNull(startIdx + it) }
                 val outOfBounds = targetSlots.any { it == null }
                 val validSlots = targetSlots.filterNotNull()
                 val firstSlotOccupied = draftSchedule[reqDay]?.get(reqSlot) != null
@@ -374,11 +387,13 @@ fun UpdateCalendarPage(
                 val unavailableSlots = validSlots.filter { s ->
                     availableSlots[reqDay]?.contains(s) != true
                 }
-                val classroomConflict = selectedClassroom != null && validSlots.any { s ->
-                    AppRepository.users.filter { it.username != user.username }.any { u ->
-                        u.schedule[reqDay]?.get(s)?.classroomId == selectedClassroom!!.id
+                val classroomConflict = selectedClassroom != null &&
+                    !selectedClassroom!!.roomCode.equals("ONLINE", ignoreCase = true) &&
+                    validSlots.any { s ->
+                        AppRepository.users.filter { it.username != user.username }.any { u ->
+                            u.schedule[reqDay]?.get(s)?.classroomId == selectedClassroom!!.id
+                        }
                     }
-                }
                 val semesterConflict = selectedCourseToAssign != null && validSlots.any { s ->
                     val newCourse = selectedCourseToAssign!!
                     AppRepository.users.filter { it.username != user.username }.any { u ->
@@ -395,32 +410,22 @@ fun UpdateCalendarPage(
                 else
                     AppRepository.classrooms
 
-                fun isClassroomOccupied(room: Classroom): Boolean = validSlots.any { s ->
-                    AppRepository.users.filter { it.username != user.username }.any { u ->
-                        u.schedule[reqDay]?.get(s)?.classroomId == room.id
+                fun isClassroomOccupied(room: Classroom): Boolean =
+                    !room.roomCode.equals("ONLINE", ignoreCase = true) && validSlots.any { s ->
+                        AppRepository.users.filter { it.username != user.username }.any { u ->
+                            u.schedule[reqDay]?.get(s)?.classroomId == room.id
+                        }
                     }
-                }
 
                 AlertDialog(
                     onDismissRequest = { showAssignDialog = null },
-                    title = { Text("Assign: ${selectedCourseToAssign?.code}") },
+                    title = { Text("Assign ${if (assignmentMode == "lab") "Lab" else "Lecture"}: ${selectedCourseToAssign?.code}") },
                     text = {
                         Column {
-                            Text("Slot: $reqDay $reqSlot", style = MaterialTheme.typography.bodyMedium)
+                            Text("Slot: $reqDay  ·  $reqSlot", style = MaterialTheme.typography.bodyMedium)
+                            Text("Duration: ${appliedDuration}h ${assignmentMode ?: ""} block", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text("Duration (hours):", style = MaterialTheme.typography.labelMedium)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                listOf(1, 2, 3).forEach { d ->
-                                    FilterChip(
-                                        selected = selectedDuration == d,
-                                        onClick = { selectedDuration = d },
-                                        label = { Text("${d}s") }
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text("Classroom (optional):", style = MaterialTheme.typography.labelMedium)
+                            Text("Classroom:", style = MaterialTheme.typography.labelMedium)
                             Spacer(modifier = Modifier.height(8.dp))
                             ExposedDropdownMenuBox(
                                 expanded = classroomDropdownExpanded,
@@ -487,7 +492,7 @@ fun UpdateCalendarPage(
                             if (outOfBounds) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    "Not enough slots for a ${selectedDuration}-hour block starting at this time.",
+                                    "Not enough slots for a ${appliedDuration}h ${assignmentMode ?: ""} block starting at this time.",
                                     color = MaterialTheme.colorScheme.error,
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -503,7 +508,7 @@ fun UpdateCalendarPage(
                             if (firstSlotOccupied) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    "This slot already has a course. Remove it first (tap ✕ on the grid).",
+                                    "This slot already has a course. Deselect the course, then tap the slot to remove it.",
                                     color = MaterialTheme.colorScheme.error,
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -536,7 +541,7 @@ fun UpdateCalendarPage(
                             enabled = !outOfBounds && !classroomConflict && !semesterConflict && !firstSlotOccupied,
                             onClick = {
                                 val course = selectedCourseToAssign!!.copy(
-                                    duration = selectedDuration,
+                                    duration = appliedDuration,
                                     classroomId = selectedClassroom?.id
                                 )
                                 validSlots.forEachIndexed { index, s ->
@@ -544,7 +549,7 @@ fun UpdateCalendarPage(
                                 }
                                 isDirty = true
                                 showAssignDialog = null
-                                if ((selectedCourseToAssign?.labHours ?: 0) > 0) labSuggestionPending = true
+                                assignmentMode = if (assignmentMode == "lecture" && (selectedCourseToAssign?.labHours ?: 0) > 0) "lab" else null
                             }
                         ) {
                             Text(when {
@@ -607,7 +612,7 @@ fun UpdateCalendarPage(
                             user.schedule[day] = innerMap
                         }
                         isDirty = false
-                        if (!labSuggestionPending) selectedCourseToAssign = null
+                        if (assignmentMode != "lab") selectedCourseToAssign = null
                         onSaveSchedule(user.username, draftSchedule, historyEntries)
                         onSendNotification(user.username, "Admin updated your weekly schedule. Please check 'My Schedule'.")
                         scope.launch { snackbarHostState.showSnackbar("Schedule updated and notification sent!") }
@@ -639,7 +644,7 @@ fun UpdateCalendarPage(
                             Text("No suggestions available. Ensure instructor availability is submitted.")
                         } else {
                             Column(
-                                modifier = Modifier.verticalScroll(rememberScrollState()).heightIn(max = 520.dp),
+                                modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
@@ -652,7 +657,7 @@ fun UpdateCalendarPage(
                                     val appliedDuration = when {
                                         result.suggestionType == "lab" && (selectedCourseToAssign?.labHours ?: 0) > 0 -> selectedCourseToAssign!!.labHours
                                         (selectedCourseToAssign?.lectureHours ?: 0) > 0 -> selectedCourseToAssign!!.lectureHours
-                                        else -> selectedDuration
+                                        else -> 1
                                     }
                                     val slotIdx = TIME_SLOTS.indexOf(suggestion.timeSlot)
                                     val slotsNeeded = if (slotIdx >= 0)
@@ -734,7 +739,7 @@ fun UpdateCalendarPage(
                                                             isDirty = true
                                                             selectedClassroom = AppRepository.classrooms.find { it.id == suggestion.classroomId }
                                                         }
-                                                        labSuggestionPending = result.suggestionType == "lecture" && (selectedCourseToAssign?.labHours ?: 0) > 0
+                                                        if (result.suggestionType == "lecture" && (selectedCourseToAssign?.labHours ?: 0) > 0) assignmentMode = "lab"
                                                         showSuggestionDialog = false
                                                     },
                                                     modifier = Modifier.fillMaxWidth(),
@@ -753,7 +758,6 @@ fun UpdateCalendarPage(
                                                         fontWeight = FontWeight.Bold
                                                     )
                                                 }
-                                                // SHAP detayları — scroll ile görülebilir
                                                 Spacer(Modifier.height(10.dp))
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Text("Match Score", style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(90.dp))
@@ -766,37 +770,47 @@ fun UpdateCalendarPage(
                                                     Text("${(suggestion.score * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                                                 }
                                                 Spacer(Modifier.height(12.dp))
-                                                Text("Feature Breakdown (SHAP)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                                Text("Decision Path", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                                                 Spacer(Modifier.height(6.dp))
-                                                suggestion.features.forEach { feat ->
-                                                    val isPositive = feat.contribution > 0
-                                                    val isNeutral = feat.contribution == 0f
-                                                    val dotColor = when {
-                                                        isPositive -> Color(0xFF2E7D32)
-                                                        isNeutral -> Color.Gray
-                                                        else -> MaterialTheme.colorScheme.error
+                                                suggestion.path.forEach { node ->
+                                                    val nodeIcon = when (node.result) {
+                                                        "pass" -> "✓"
+                                                        "fail_hard" -> "✗"
+                                                        "partial" -> "◑"
+                                                        "info" -> "ℹ"
+                                                        else -> "·"
+                                                    }
+                                                    val nodeColor = when (node.result) {
+                                                        "pass" -> Color(0xFF2E7D32)
+                                                        "fail_hard" -> MaterialTheme.colorScheme.error
+                                                        "partial" -> Color(0xFFF57C00)
+                                                        "info" -> Color(0xFF1565C0)
+                                                        else -> Color.Gray
+                                                    }
+                                                    val badge = when {
+                                                        node.isHard -> " [required]"
+                                                        node.scoreContribution > 0f -> " [+${(node.scoreContribution * 100).toInt()}%]"
+                                                        node.weight > 0f -> " [+0%]"
+                                                        else -> ""
                                                     }
                                                     Row(
                                                         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
                                                         verticalAlignment = Alignment.Top
                                                     ) {
                                                         Text(
-                                                            if (isPositive) "+" else if (isNeutral) "·" else "−",
-                                                            color = dotColor,
+                                                            nodeIcon,
+                                                            color = nodeColor,
                                                             fontWeight = FontWeight.Bold,
-                                                            modifier = Modifier.width(16.dp),
+                                                            modifier = Modifier.width(18.dp),
                                                             fontSize = 14.sp
                                                         )
                                                         Column(modifier = Modifier.weight(1f)) {
-                                                            Text(feat.displayName, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                                                            Text(feat.description, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                            Row {
+                                                                Text(node.label, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                                                Text(badge, fontSize = 10.sp, color = Color.Gray)
+                                                            }
+                                                            Text(node.description, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                         }
-                                                        Text(
-                                                            "${if (feat.contribution >= 0) "+" else ""}${(feat.contribution * 100).toInt()}%",
-                                                            fontSize = 11.sp,
-                                                            color = dotColor,
-                                                            fontWeight = FontWeight.Bold
-                                                        )
                                                     }
                                                 }
                                                 Spacer(Modifier.height(10.dp))
@@ -1119,7 +1133,21 @@ fun SchedulingGridEnhanced(
                                             else -> Color.Red.copy(alpha = 0.05f)
                                         }
                                     )
-                                    .clickable(enabled = !isContinuation && !isSemesterBlocked) { onCellClick(day, slot) },
+                                    .clickable(enabled = !isContinuation && !isSemesterBlocked) {
+                                        if (scheduledCourse != null && selectedCourse == null) {
+                                            val slotIndex = timeSlots.indexOf(slot)
+                                            draftSchedule[day]?.set(slot, null)
+                                            for (i in 1 until scheduledCourse.duration) {
+                                                val nextSlot = timeSlots.getOrNull(slotIndex + i) ?: break
+                                                if (draftSchedule[day]?.get(nextSlot)?.duration == -1) {
+                                                    draftSchedule[day]?.set(nextSlot, null)
+                                                }
+                                            }
+                                            onSlotCleared()
+                                        } else {
+                                            onCellClick(day, slot)
+                                        }
+                                    },
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (isSemesterBlocked) {
@@ -1154,12 +1182,26 @@ fun SchedulingGridEnhanced(
                                     val roomCode = scheduledCourse.classroomId?.let { id ->
                                         AppRepository.classrooms.find { it.id == id }?.roomCode
                                     }
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.padding(horizontal = 2.dp)
+                                    ) {
                                         Text(
                                             scheduledCourse.code,
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        Text(
+                                            scheduledCourse.name,
+                                            fontSize = 7.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            textAlign = TextAlign.Center,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                                         )
                                         if (roomCode != null) {
                                             Text(
@@ -1168,25 +1210,6 @@ fun SchedulingGridEnhanced(
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                                             )
-                                        }
-                                        IconButton(
-                                            onClick = {
-                                                val slotIndex = timeSlots.indexOf(slot)
-                                                draftSchedule[day]?.set(slot, null)
-                                                for (i in 1 until scheduledCourse.duration) {
-                                                    val nextIdx = slotIndex + i
-                                                    if (nextIdx < timeSlots.size) {
-                                                        val nextSlot = timeSlots[nextIdx]
-                                                        if (draftSchedule[day]?.get(nextSlot)?.duration == -1) {
-                                                            draftSchedule[day]?.set(nextSlot, null)
-                                                        }
-                                                    }
-                                                }
-                                                onSlotCleared()
-                                            },
-                                            modifier = Modifier.size(16.dp)
-                                        ) {
-                                            Icon(Icons.Default.Clear, contentDescription = "Remove", tint = Color.Red)
                                         }
                                     }
                                 } else if (!isAvailable) {

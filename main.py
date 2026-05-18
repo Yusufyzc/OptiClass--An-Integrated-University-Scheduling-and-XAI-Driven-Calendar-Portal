@@ -857,18 +857,8 @@ def chatbot(body: ChatBotRequest, token_data: dict = Depends(verify_token)):
     except Exception:
         return {"response": "The assistant is currently unavailable. Please try again later."}
 
-# --- XAI SCHEDULE SUGGESTION ---
+# --- XAI SCHEDULE SUGGESTION (Decision Tree) ---
 
-XAI_FEATURE_NAMES = [
-    "instructor_available",
-    "no_semester_conflict",
-    "classroom_fits",
-    "no_classroom_conflict",
-    "slot_continuity",
-    "day_variety"
-]
-XAI_FEATURE_WEIGHTS = [0.35, 0.25, 0.15, 0.10, 0.10, 0.05]
-XAI_FEATURE_BASELINE = 0.5
 XAI_SCHEDULE_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"]
 XAI_SCHEDULE_SLOTS = ["08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
                       "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"]
@@ -878,15 +868,17 @@ class XAISuggestionRequest(BaseModel):
     duration: int = 1
     lectureHours: int = 0
     labHours: int = 0
-    suggestionType: str = "lecture"  # "lecture" or "lab"
+    suggestionType: str = "lecture"
     classroomId: Optional[str] = None
 
-class XAIFeatureExplanation(BaseModel):
-    name: str
-    displayName: str
-    value: float
-    contribution: float
+class DTNodeResult(BaseModel):
+    node: str
+    label: str
+    result: str   # "pass" | "fail_hard" | "partial" | "info" | "fail"
     description: str
+    isHard: bool
+    weight: float = 0.0
+    scoreContribution: float = 0.0
 
 class XAISlotSuggestion(BaseModel):
     day: str
@@ -894,7 +886,7 @@ class XAISlotSuggestion(BaseModel):
     classroomId: Optional[str] = None
     classroomCode: Optional[str] = None
     score: float
-    features: List[XAIFeatureExplanation]
+    path: List[DTNodeResult]
     summary: str
 
 class XAISuggestionResponse(BaseModel):
@@ -904,31 +896,170 @@ class XAISuggestionResponse(BaseModel):
     algorithmNote: str
     suggestionType: str = "lecture"
 
-def xai_score(fv):
-    return sum(w * f for w, f in zip(XAI_FEATURE_WEIGHTS, fv))
 
-def xai_shap(fv):
-    # For a linear model: SHAP_i = w_i * (x_i - E[x_i]), E[x_i]=0.5 (uniform prior)
-    return [w * (f - XAI_FEATURE_BASELINE) for w, f in zip(XAI_FEATURE_WEIGHTS, fv)]
+def dt_evaluate_slot(day, main_slot, consec, classroom,
+                     available_keys, conflict_map, classroom_booked,
+                     course_dept, course_semester, student_count,
+                     effective_duration, day_load, max_load):
+    path = []
+    main_key = f"{day}_{main_slot}"
+    room_id = classroom["id"]
+    room_code = classroom["room_code"]
+    is_online = room_code.upper() == "ONLINE"
+    is_common = course_dept == "COMMON"
 
-def xai_summary(fd, day, slot, room_code, score):
-    reasons = []
-    if fd["instructor_available"] == 1.0:
-        reasons.append(f"instructor is available on {day} at {slot}")
-    if fd["no_semester_conflict"] == 1.0:
-        reasons.append("no semester conflicts with other courses")
-    if fd["classroom_fits"] == 1.0 and room_code:
-        reasons.append(f"classroom {room_code} has sufficient capacity")
-    if fd["no_classroom_conflict"] == 1.0 and room_code:
-        reasons.append(f"classroom {room_code} is free at this time")
-    if fd["slot_continuity"] == 1.0:
-        reasons.append("all consecutive hours are available")
-    if fd["day_variety"] == 1.0:
-        reasons.append("distributes workload evenly across the week")
-    if not reasons:
-        return f"Low match score ({score:.0%}). Consider reviewing instructor availability first."
-    joined = "; ".join(reasons[:3])
-    return f"Recommended because {joined}. Overall match: {score:.0%}."
+    # Node 1: Instructor Availability (HARD)
+    avail = main_key in available_keys
+    path.append(DTNodeResult(
+        node="instructor_available",
+        label="Instructor Availability",
+        result="pass" if avail else "fail_hard",
+        description=f"Instructor {'is available' if avail else 'is not available'} on {day} at {main_slot}",
+        isHard=True
+    ))
+    if not avail:
+        return 0.0, path, True
+
+    # Node 2: Semester / Common Course Conflict (HARD)
+    conflict = any(
+        c["semester"] == course_semester and (
+            is_common or c["dept"] == "COMMON" or c["dept"] == course_dept
+        )
+        for s in consec for c in conflict_map.get(f"{day}_{s}", [])
+    )
+    if is_common:
+        path.append(DTNodeResult(
+            node="common_course_check",
+            label="Common Course — All Departments",
+            result="fail_hard" if conflict else "pass",
+            description=(
+                f"Conflict found: a semester {course_semester} course is already scheduled here"
+                if conflict else
+                f"No semester {course_semester} conflicts across any department"
+            ),
+            isHard=True
+        ))
+    else:
+        path.append(DTNodeResult(
+            node="no_semester_conflict",
+            label="Semester Conflict Check",
+            result="fail_hard" if conflict else "pass",
+            description=(
+                f"Another {course_dept} dept / semester {course_semester} course conflicts here"
+                if conflict else
+                f"No {course_dept} dept semester {course_semester} conflicts at this slot"
+            ),
+            isHard=True
+        ))
+    if conflict:
+        return 0.0, path, True
+
+    # Node 3: Classroom Capacity (SOFT, weight=0.45)
+    fits = student_count == 0 or classroom["capacity"] >= student_count
+    cap_contrib = 0.45 if fits else 0.0
+    path.append(DTNodeResult(
+        node="classroom_fits",
+        label="Classroom Capacity",
+        result="pass" if fits else "fail",
+        description=(
+            f"{room_code} (cap: {classroom['capacity']}) fits {student_count} students"
+            if fits else
+            f"{room_code} (cap: {classroom['capacity']}) is too small for {student_count} students"
+        ),
+        isHard=False,
+        weight=0.45,
+        scoreContribution=round(cap_contrib, 4)
+    ))
+
+    # Node 4: Classroom Availability (HARD for non-ONLINE)
+    room_free = all(room_id not in classroom_booked.get(f"{day}_{s}", set()) for s in consec)
+    if is_online:
+        path.append(DTNodeResult(
+            node="no_classroom_conflict",
+            label="Classroom Availability",
+            result="info",
+            description="Online room — multiple instructors can use it simultaneously",
+            isHard=False
+        ))
+    else:
+        path.append(DTNodeResult(
+            node="no_classroom_conflict",
+            label="Classroom Availability",
+            result="pass" if room_free else "fail_hard",
+            description=(
+                f"{room_code} is free for all {effective_duration} hour(s)"
+                if room_free else
+                f"{room_code} is already booked at this time"
+            ),
+            isHard=True
+        ))
+        if not room_free:
+            return 0.0, path, True
+
+    # Node 5: Consecutive Hours Available (SOFT, weight=0.35)
+    all_consec_avail = all(f"{day}_{s}" in available_keys for s in consec)
+    if all_consec_avail:
+        cont_contrib = 0.35
+        cont_result = "pass"
+        cont_desc = f"All {effective_duration} consecutive hour(s) are in instructor availability"
+    elif avail:
+        cont_contrib = 0.175
+        cont_result = "partial"
+        cont_desc = f"Only the first hour is available; {effective_duration - 1} continuation slot(s) outside availability"
+    else:
+        cont_contrib = 0.0
+        cont_result = "fail"
+        cont_desc = "Consecutive hours not in instructor availability"
+    path.append(DTNodeResult(
+        node="slot_continuity",
+        label="Consecutive Hours Available",
+        result=cont_result,
+        description=cont_desc,
+        isHard=False,
+        weight=0.35,
+        scoreContribution=round(cont_contrib, 4)
+    ))
+
+    # Node 6: Workload Balance (SOFT, weight=0.20)
+    if day_load[day] == 0:
+        day_contrib = 0.20
+        day_result = "pass"
+        day_desc = f"No courses yet on {day} — best for workload balance"
+    elif day_load[day] < max_load:
+        day_contrib = 0.10
+        day_result = "partial"
+        day_desc = f"{day} has {day_load[day]} course(s), fewer than the busiest day ({max_load})"
+    else:
+        day_contrib = 0.0
+        day_result = "fail"
+        day_desc = f"{day} already has the most courses ({day_load[day]})"
+    path.append(DTNodeResult(
+        node="day_variety",
+        label="Workload Balance",
+        result=day_result,
+        description=day_desc,
+        isHard=False,
+        weight=0.20,
+        scoreContribution=round(day_contrib, 4)
+    ))
+
+    return round(cap_contrib + cont_contrib + day_contrib, 4), path, False
+
+
+def dt_summary(path, score):
+    hard_pass = [n.label for n in path if n.result == "pass" and n.isHard]
+    soft_pass = [n.label for n in path if n.result == "pass" and not n.isHard]
+    partials = [n.label for n in path if n.result == "partial"]
+    if score >= 0.70:
+        reasons = (hard_pass + soft_pass)[:3]
+        return f"Excellent match ({score:.0%}): {'; '.join(reasons)}."
+    elif score >= 0.40:
+        base = (hard_pass[:2] + soft_pass[:1])
+        extra = f" Partial: {partials[0]}." if partials else ""
+        return f"Good match ({score:.0%}): {'; '.join(base)}.{extra}"
+    else:
+        note = f"Partial credit: {partials[0]}." if partials else "Most soft criteria not met."
+        return f"Low match ({score:.0%}). {note}"
 
 @app.post("/schedule/suggest/{username}", tags=["XAI"])
 def suggest_schedule(username: str, body: XAISuggestionRequest,
@@ -1005,15 +1136,6 @@ def suggest_schedule(username: str, body: XAISuggestionRequest,
                for d in XAI_SCHEDULE_DAYS}
     max_load = max(day_load.values()) if any(day_load.values()) else 0
 
-    display_names = {
-        "instructor_available": "Instructor Available",
-        "no_semester_conflict": "No Semester Conflict",
-        "classroom_fits": "Classroom Capacity OK",
-        "no_classroom_conflict": "Classroom Free",
-        "slot_continuity": "Consecutive Hours Free",
-        "day_variety": "Balanced Day Load"
-    }
-
     suggestions = []
     for day in XAI_SCHEDULE_DAYS:
         for si in range(len(XAI_SCHEDULE_SLOTS)):
@@ -1021,70 +1143,33 @@ def suggest_schedule(username: str, body: XAISuggestionRequest,
                 continue
             main_slot = XAI_SCHEDULE_SLOTS[si]
             consec = [XAI_SCHEDULE_SLOTS[si + k] for k in range(effective_duration)]
-            main_key = f"{day}_{main_slot}"
-            if own_schedule.get(main_key):
+            if own_schedule.get(f"{day}_{main_slot}"):
                 continue
 
             for classroom in eligible:
-                room_id = classroom["id"]
-                room_code = classroom["room_code"]
-
-                f_avail = 1.0 if main_key in available_keys else 0.0
-
-                conflict = any(
-                    c["semester"] == course_semester and (
-                        course_dept == "COMMON" or c["dept"] == "COMMON" or c["dept"] == course_dept
-                    )
-                    for s in consec for c in conflict_map.get(f"{day}_{s}", [])
+                score, path, eliminated = dt_evaluate_slot(
+                    day, main_slot, consec, classroom,
+                    available_keys, conflict_map, classroom_booked,
+                    course_dept, course_semester, student_count,
+                    effective_duration, day_load, max_load
                 )
-                f_no_conflict = 0.0 if conflict else 1.0
-
-                f_capacity = 1.0 if student_count == 0 or classroom["capacity"] >= student_count else 0.0
-
-                room_free = all(room_id not in classroom_booked.get(f"{day}_{s}", set()) for s in consec)
-                f_no_room = 1.0 if room_free else 0.0
-
-                all_consec_avail = all(f"{day}_{s}" in available_keys for s in consec)
-                f_continuity = 1.0 if all_consec_avail else (0.5 if f_avail == 1.0 else 0.0)
-
-                f_day = 1.0 if day_load[day] == 0 else (0.5 if day_load[day] < max_load else 0.0)
-
-                fv = [f_avail, f_no_conflict, f_capacity, f_no_room, f_continuity, f_day]
-                score = xai_score(fv)
-                shap_vals = xai_shap(fv)
-
-                fd = dict(zip(XAI_FEATURE_NAMES, fv))
-                descriptions = {
-                    "instructor_available": f"Instructor marked {day} {main_slot} as available",
-                    "no_semester_conflict": f"No Semester {course_semester} courses conflict at this time",
-                    "classroom_fits": f"{room_code} capacity ({classroom['capacity']}) fits {student_count} students",
-                    "no_classroom_conflict": f"{room_code} is not booked at this time",
-                    "slot_continuity": f"All {effective_duration} consecutive hour(s) are in availability",
-                    "day_variety": f"{day} has {'no' if day_load[day] == 0 else 'fewer'} courses assigned yet"
-                }
-
+                if eliminated:
+                    continue
                 suggestions.append(XAISlotSuggestion(
                     day=day, timeSlot=main_slot,
-                    classroomId=room_id, classroomCode=room_code,
-                    score=round(score, 4),
-                    features=[
-                        XAIFeatureExplanation(
-                            name=XAI_FEATURE_NAMES[i],
-                            displayName=display_names[XAI_FEATURE_NAMES[i]],
-                            value=fv[i],
-                            contribution=round(shap_vals[i], 4),
-                            description=descriptions[XAI_FEATURE_NAMES[i]]
-                        ) for i in range(len(XAI_FEATURE_NAMES))
-                    ],
-                    summary=xai_summary(fd, day, main_slot, room_code, score)
+                    classroomId=classroom["id"],
+                    classroomCode=classroom["room_code"],
+                    score=score,
+                    path=path,
+                    summary=dt_summary(path, score)
                 ))
 
     suggestions.sort(key=lambda x: x.score, reverse=True)
     return XAISuggestionResponse(
-        suggestions=suggestions[:3],
+        suggestions=suggestions,
         courseCode=body.courseCode,
         courseName=course_row["name"],
-        algorithmNote="Linear scoring with SHAP attribution: availability 35%, semester conflict 25%, classroom capacity 15%, classroom free 10%, slot continuity 10%, day balance 5%.",
+        algorithmNote="Decision Tree: availability and semester conflicts are hard constraints (eliminators). Soft scoring: classroom capacity 45%, slot continuity 35%, day balance 20%.",
         suggestionType=body.suggestionType
     )
 

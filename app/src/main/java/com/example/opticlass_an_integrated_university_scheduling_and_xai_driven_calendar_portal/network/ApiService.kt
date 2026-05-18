@@ -294,12 +294,14 @@ data class XAISuggestionRequest(
     val classroomId: String? = null
 )
 
-data class XAIFeatureExplanationDto(
-    val name: String,
-    val displayName: String,
-    val value: Float,
-    val contribution: Float,
-    val description: String
+data class DTNodeResultDto(
+    val node: String,
+    val label: String,
+    val result: String,
+    val description: String,
+    val isHard: Boolean,
+    val weight: Float = 0f,
+    val scoreContribution: Float = 0f
 )
 
 data class XAISlotSuggestionDto(
@@ -308,7 +310,7 @@ data class XAISlotSuggestionDto(
     val classroomId: String?,
     val classroomCode: String?,
     val score: Float,
-    val features: List<XAIFeatureExplanationDto>,
+    val path: List<DTNodeResultDto>,
     val summary: String
 )
 

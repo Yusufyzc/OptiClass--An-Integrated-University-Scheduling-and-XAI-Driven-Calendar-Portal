@@ -94,6 +94,7 @@ enum class AppDestinations(
     UPDATE_CALENDAR("Update Calendar", Icons.Default.Edit, roleRestriction = UserRole.ADMIN),
     INSTRUCTOR_AVAILABILITY("Instructor Availability", Icons.AutoMirrored.Filled.List, roleRestriction = UserRole.ADMIN),
     CLASSROOMS("Classrooms", Icons.Default.School, roleRestriction = UserRole.ADMIN),
+    WEEKLY_SCHEDULE("Weekly Schedule", Icons.Default.DateRange, roleRestriction = UserRole.ADMIN),
     SETTINGS("Settings", Icons.Default.Settings),
     CHATBOT("Assistant", Icons.Default.Chat),
 }

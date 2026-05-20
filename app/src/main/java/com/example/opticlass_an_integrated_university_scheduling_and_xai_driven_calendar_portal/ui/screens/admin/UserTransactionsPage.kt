@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun UserTransactionsPage(
     currentUserName: String = "",
-    onAddUser: (String, String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _, _ -> },
+    onAddUser: (String, String, String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _, _, _ -> },
     onDeleteUser: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
     onUpdateUser: (String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _ -> },
     onResetPassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> }
@@ -82,8 +82,8 @@ fun UserTransactionsPage(
     if (showAddDialog) {
         AddUserDialog(
             onDismiss = { showAddDialog = false },
-            onAdd = { username, password, role, fullName, email, callback ->
-                onAddUser(username, password, role, fullName, email) { success, error ->
+            onAdd = { username, password, role, fullName, email, department, callback ->
+                onAddUser(username, password, role, fullName, email, department) { success, error ->
                     callback(success, error)
                     if (success) showAddDialog = false
                 }
@@ -183,11 +183,12 @@ fun CredentialsDialog(credentials: List<Pair<String, String>>, onDismiss: () -> 
 }
 
 @Composable
-fun AddUserDialog(onDismiss: () -> Unit, onAdd: (String, String, String, String, String, (Boolean, String?) -> Unit) -> Unit) {
+fun AddUserDialog(onDismiss: () -> Unit, onAdd: (String, String, String, String, String, String, (Boolean, String?) -> Unit) -> Unit) {
     var username by remember { mutableStateOf("") }
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var department by remember { mutableStateOf("") }
     var role by remember { mutableStateOf(UserRole.INSTRUCTOR) }
     var errorMsg by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
@@ -200,6 +201,7 @@ fun AddUserDialog(onDismiss: () -> Unit, onAdd: (String, String, String, String,
                 OutlinedTextField(value = username, onValueChange = { username = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(value = fullName, onValueChange = { fullName = it }, label = { Text("Full Name") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(value = department, onValueChange = { department = it }, label = { Text("Department") }, modifier = Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("e.g. Computer Engineering") })
                 OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Role:", style = MaterialTheme.typography.labelMedium)
@@ -230,7 +232,7 @@ fun AddUserDialog(onDismiss: () -> Unit, onAdd: (String, String, String, String,
                         else -> {
                             isLoading = true
                             errorMsg = ""
-                            onAdd(trimmedUsername, password, role.name, fullName.trim(), email.trim()) { success, error ->
+                            onAdd(trimmedUsername, password, role.name, fullName.trim(), email.trim(), department.trim()) { success, error ->
                                 isLoading = false
                                 if (!success) errorMsg = error ?: "Kullanıcı eklenemedi"
                             }

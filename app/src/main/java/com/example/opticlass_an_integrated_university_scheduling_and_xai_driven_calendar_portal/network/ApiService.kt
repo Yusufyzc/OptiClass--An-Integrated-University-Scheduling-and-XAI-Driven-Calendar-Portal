@@ -179,6 +179,12 @@ interface ApiService {
         @Path("username") username: String,
         @Body body: XAISuggestionRequest
     ): Response<XAISuggestionResponseDto>
+
+    @POST("schedule/suggest-weekly")
+    suspend fun suggestWeeklySchedule(
+        @Header("Authorization") token: String,
+        @Body body: WeeklyScheduleRequest
+    ): Response<WeeklyScheduleResponseDto>
 }
 
 data class LoginRequest(val username: String, val passwordHash: String)
@@ -320,4 +326,34 @@ data class XAISuggestionResponseDto(
     val courseName: String,
     val algorithmNote: String,
     val suggestionType: String = "lecture"
+)
+
+data class WeeklyScheduleRequest(val phase: String)
+
+data class WeeklySlotDto(
+    val day: String,
+    val timeSlot: String,
+    val courseCode: String,
+    val courseName: String,
+    val lecturerUsername: String,
+    val lecturerFullName: String,
+    val classroomCode: String,
+    val department: String,
+    val semester: Int,
+    val priority: Int,
+    val duration: Int = 1,
+    val isLab: Boolean = false
+)
+
+data class WeeklySuggestionDto(
+    val title: String,
+    val description: String,
+    val assignments: List<WeeklySlotDto>,
+    val unassignedCourses: List<String>
+)
+
+data class WeeklyScheduleResponseDto(
+    val suggestions: List<WeeklySuggestionDto>,
+    val phase: String,
+    val algorithmNote: String
 )

@@ -221,9 +221,9 @@ fun UpdateCalendarPage(
             Text("Assigned Courses (Tap to select, then tap grid to assign):", style = MaterialTheme.typography.titleSmall)
             Spacer(modifier = Modifier.height(8.dp))
 
-            val sortedCourses = user.courses.sortedWith(
-                compareByDescending<CourseImport> { it.priority }.thenByDescending { it.studentCount }
-            )
+            val sortedCourses = user.courses
+                .filter { c -> AppRepository.phasePriorities.isEmpty() || c.priority == currentPhasePriority }
+                .sortedWith(compareByDescending<CourseImport> { it.priority }.thenByDescending { it.studentCount })
             LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -362,7 +362,25 @@ fun UpdateCalendarPage(
                 semesterBlockedSlots = semesterBlockedSlots,
                 onCellClick = { day, slot ->
                     if (selectedCourseToAssign != null && assignmentMode != null) {
-                        showAssignDialog = day to slot
+                        val startIdx = TIME_SLOTS.indexOf(slot)
+                        val dur = when {
+                            assignmentMode == "lab" && (selectedCourseToAssign!!.labHours) > 0 -> selectedCourseToAssign!!.labHours
+                            selectedCourseToAssign!!.lectureHours > 0 -> selectedCourseToAssign!!.lectureHours
+                            else -> 1
+                        }
+                        val allInAvail = (0 until dur).all { k ->
+                            val s = TIME_SLOTS.getOrNull(startIdx + k) ?: return@all false
+                            availableSlots[day]?.contains(s) == true
+                        }
+                        if (!allInAvail) {
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    "All ${dur}h must be within instructor availability. Cannot assign here."
+                                )
+                            }
+                        } else {
+                            showAssignDialog = day to slot
+                        }
                     }
                 },
                 onSlotCleared = { isDirty = true }
@@ -500,7 +518,7 @@ fun UpdateCalendarPage(
                             if (unavailableSlots.isNotEmpty()) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    "Instructor not available at: ${unavailableSlots.joinToString(", ")}",
+                                    "Cannot assign: ${unavailableSlots.joinToString(", ")} outside instructor availability.",
                                     color = MaterialTheme.colorScheme.error,
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -538,7 +556,7 @@ fun UpdateCalendarPage(
                     },
                     confirmButton = {
                         TextButton(
-                            enabled = !outOfBounds && !classroomConflict && !semesterConflict && !firstSlotOccupied,
+                            enabled = !outOfBounds && !classroomConflict && !semesterConflict && !firstSlotOccupied && unavailableSlots.isEmpty(),
                             onClick = {
                                 val course = selectedCourseToAssign!!.copy(
                                     duration = appliedDuration,
@@ -554,7 +572,8 @@ fun UpdateCalendarPage(
                         ) {
                             Text(when {
                                 firstSlotOccupied -> "Occupied"
-                                conflictSlots.isNotEmpty() || unavailableSlots.isNotEmpty() -> "Assign Anyway"
+                                unavailableSlots.isNotEmpty() -> "Not Available"
+                                conflictSlots.isNotEmpty() -> "Assign Anyway"
                                 else -> "Confirm"
                             })
                         }
@@ -667,8 +686,8 @@ fun UpdateCalendarPage(
                                         draftSchedule[suggestion.day]?.get(s) != null
                                     }
                                     val scoreColor = when {
-                                        suggestion.score >= 0.7f -> Color(0xFF2E7D32)
-                                        suggestion.score >= 0.4f -> Color(0xFFF57C00)
+                                        suggestion.score >= 0.85f -> Color(0xFF2E7D32)
+                                        suggestion.score >= 0.60f -> Color(0xFFF57C00)
                                         else -> MaterialTheme.colorScheme.error
                                     }
 
@@ -790,7 +809,8 @@ fun UpdateCalendarPage(
                                                     val badge = when {
                                                         node.isHard -> " [required]"
                                                         node.scoreContribution > 0f -> " [+${(node.scoreContribution * 100).toInt()}%]"
-                                                        node.weight > 0f -> " [+0%]"
+                                                        node.scoreContribution < 0f -> " [${(node.scoreContribution * 100).toInt()}%]"
+                                                        node.weight > 0f -> " [0%]"
                                                         else -> ""
                                                     }
                                                     Row(
@@ -1133,8 +1153,8 @@ fun SchedulingGridEnhanced(
                                             else -> Color.Red.copy(alpha = 0.05f)
                                         }
                                     )
-                                    .clickable(enabled = !isContinuation && !isSemesterBlocked) {
-                                        if (scheduledCourse != null && selectedCourse == null) {
+                                    .clickable(enabled = !isContinuation && !isSemesterBlocked && (selectedCourse == null || scheduledCourse != null || isAvailable)) {
+                                        if (scheduledCourse != null) {
                                             val slotIndex = timeSlots.indexOf(slot)
                                             draftSchedule[day]?.set(slot, null)
                                             for (i in 1 until scheduledCourse.duration) {

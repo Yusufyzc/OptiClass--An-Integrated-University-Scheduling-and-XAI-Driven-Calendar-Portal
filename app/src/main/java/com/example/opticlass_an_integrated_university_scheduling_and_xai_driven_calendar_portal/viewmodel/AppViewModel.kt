@@ -25,6 +25,8 @@ import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.PhasePrioritiesDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.XAISuggestionRequest
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.XAISuggestionResponseDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.WeeklyScheduleRequest
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.WeeklyScheduleResponseDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.SchedulingPhaseDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.UserCreateDto
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.UserUpdateDto
@@ -309,13 +311,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addUser(username: String, password: String, role: String, fullName: String, email: String, onResult: (Boolean, String?) -> Unit) {
+    fun addUser(username: String, password: String, role: String, fullName: String, email: String, department: String = "", onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
             try {
                 val response = RetrofitClient.instance.addUser(
                     token = authToken,
                     user = UserCreateDto(username = username, passwordHash = sha256(password),
-                        role = role, fullName = fullName, email = email, department = "")
+                        role = role, fullName = fullName, email = email, department = department)
                 )
                 if (response.isSuccessful) {
                     val userResponse = RetrofitClient.instance.getUsers(authToken)
@@ -673,6 +675,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 else onResult(null)
             } catch (e: Exception) {
                 Log.e("AppViewModel", "Suggest schedule error", e)
+                onResult(null)
+            }
+        }
+    }
+
+    fun suggestWeeklySchedule(phase: String, onResult: (WeeklyScheduleResponseDto?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.suggestWeeklySchedule(
+                    token = authToken,
+                    body = WeeklyScheduleRequest(phase = phase)
+                )
+                if (response.isSuccessful) onResult(response.body())
+                else onResult(null)
+            } catch (e: Exception) {
+                Log.e("AppViewModel", "Weekly schedule suggestion error", e)
                 onResult(null)
             }
         }

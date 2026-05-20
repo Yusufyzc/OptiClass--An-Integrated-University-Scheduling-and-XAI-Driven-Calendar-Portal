@@ -343,6 +343,9 @@ COPY public.users (username, password_hash, role, full_name, email, avatar_url, 
 admin	240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9	ADMIN	System Administrator	admin@admin.com	\N	Admin	f	2026-04-30 16:23:30.499699+03
 instructor	c1437a55f6e93b7049c4064af1b0920974e383a435283f5d0b0496ee4a8a47b5	INSTRUCTOR	Test Instructor	instructor@example.com	\N	Computer Engineering	f	2026-04-30 16:23:30.499699+03
 \.
+-- NOTE: super_admin user is created automatically on first server start by create_tables() in main.py
+-- Default credentials: username=super_admin  password=SuperAdmin1!
+-- NOTE: Audit logs are stored in audit_logs.csv (same directory as main.py), not in the database.
 
 
 --

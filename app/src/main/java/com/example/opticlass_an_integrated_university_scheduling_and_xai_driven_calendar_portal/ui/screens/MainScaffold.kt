@@ -12,6 +12,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.XAISuggestionResponseDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.WeeklyScheduleResponseDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.ui.screens.admin.WeeklySchedulePage
 import kotlinx.coroutines.launch
 
 @Composable
@@ -31,7 +33,7 @@ fun OptiClassApp(viewModel: AppViewModel) {
                 userName = viewModel.currentUserName,
                 onLogout = { viewModel.logout() },
                 onChangePassword = { current, new, cb -> viewModel.changePassword(current, new, cb) },
-                onAddUser = { u, p, r, fn, e, cb -> viewModel.addUser(u, p, r, fn, e, cb) },
+                onAddUser = { u, p, r, fn, e, dept, cb -> viewModel.addUser(u, p, r, fn, e, dept, cb) },
                 onDeleteUser = { u, cb -> viewModel.deleteUser(u, cb) },
                 onUpdateUser = { u, fn, e, r, cb -> viewModel.updateUser(u, fn, e, r, cb) },
                 onResetPassword = { u, np, cb -> viewModel.resetUserPassword(u, np, cb) },
@@ -53,7 +55,8 @@ fun OptiClassApp(viewModel: AppViewModel) {
                 onRefreshAvailabilities = { viewModel.refreshAvailabilities() },
                 onSetSchedulingPhase = { phase, cb -> viewModel.setSchedulingPhase(phase, cb) },
                 onSendChatBotMessage = { msg, cb -> viewModel.sendChatBotMessage(msg, cb) },
-                onSuggestSchedule = { u, code, clsId, dur, type, cb -> viewModel.suggestScheduleSlot(u, code, dur, type, clsId, cb) }
+                onSuggestSchedule = { u, code, clsId, dur, type, cb -> viewModel.suggestScheduleSlot(u, code, dur, type, clsId, cb) },
+                onSuggestWeeklySchedule = { phase, cb -> viewModel.suggestWeeklySchedule(phase, cb) }
             )
         }
     }
@@ -66,7 +69,7 @@ fun MainScaffold(
     userName: String,
     onLogout: () -> Unit,
     onChangePassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> },
-    onAddUser: (String, String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _, _ -> },
+    onAddUser: (String, String, String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _, _, _ -> },
     onDeleteUser: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
     onUpdateUser: (String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _ -> },
     onResetPassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> },
@@ -88,7 +91,8 @@ fun MainScaffold(
     onRefreshAvailabilities: () -> Unit = {},
     onSetSchedulingPhase: (String, (Boolean) -> Unit) -> Unit = { _, _ -> },
     onSendChatBotMessage: (String, (String) -> Unit) -> Unit = { _, _ -> },
-    onSuggestSchedule: (username: String, courseCode: String, classroomId: String?, duration: Int, suggestionType: String, onResult: (XAISuggestionResponseDto?) -> Unit) -> Unit = { _, _, _, _, _, _ -> }
+    onSuggestSchedule: (username: String, courseCode: String, classroomId: String?, duration: Int, suggestionType: String, onResult: (XAISuggestionResponseDto?) -> Unit) -> Unit = { _, _, _, _, _, _ -> },
+    onSuggestWeeklySchedule: (phase: String, onResult: (WeeklyScheduleResponseDto?) -> Unit) -> Unit = { _, _ -> }
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -315,6 +319,8 @@ fun MainScaffold(
                         SettingsPage(userName, onChangePassword = onChangePassword, onUpdateAvatar = onUpdateAvatar)
                     currentDestination == AppDestinations.CHATBOT ->
                         ChatBotPage(onSendMessage = onSendChatBotMessage)
+                    currentDestination == AppDestinations.WEEKLY_SCHEDULE ->
+                        WeeklySchedulePage(onSuggestWeekly = onSuggestWeeklySchedule)
                     else -> GenericPage(currentDestination.label)
                 }
             }

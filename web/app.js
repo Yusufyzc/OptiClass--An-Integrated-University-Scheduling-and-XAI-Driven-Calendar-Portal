@@ -700,12 +700,16 @@ async function renderClassrooms() {
   const classrooms = await API.getClassrooms();
   state._classrooms = classrooms;
 
-  setTopbarRight(`<button class="btn btn-primary" onclick="openAddClassroomModal()">+ Add Classroom</button>`);
+  setTopbarRight(`
+    <button class="btn btn-secondary" onclick="openImportClassroomsModal()" style="margin-right:8px">📥 Import Excel</button>
+    <button class="btn btn-primary" onclick="openAddClassroomModal()">+ Add Classroom</button>
+  `);
 
   setContent(`
     <div class="page-toolbar">
       <input class="search-input" placeholder="Search classrooms…"
              oninput="filterClassrooms(this.value)">
+      <button class="btn btn-secondary" onclick="openImportClassroomsModal()">📥 Import Excel</button>
       <button class="btn btn-primary" onclick="openAddClassroomModal()">+ Add Classroom</button>
     </div>
     <div class="card" id="classrooms-card">
@@ -774,6 +778,178 @@ async function deleteClassroom(id, code) {
     toast('Classroom deleted', 'success');
     await renderClassrooms();
   } catch (e) { toast(e.message, 'error'); }
+}
+
+window._excelClassrooms = [];
+
+function openImportClassroomsModal() {
+  window._excelClassrooms = [];
+  openModal('Import Classrooms from Excel', `
+    <div class="info-box">
+      Expected columns (row 1 = header, data from row 2):<br>
+      <code style="font-size:11px">Room Code | Capacity</code>
+    </div>
+    <div class="form-group">
+      <label>Excel File (.xlsx / .xls)</label>
+      <input type="file" id="classroom-excel-file" accept=".xlsx,.xls" onchange="previewClassroomExcel(this)">
+    </div>
+    <div id="classroom-excel-preview" style="max-height:300px;overflow-y:auto;margin-top:12px"></div>
+  `, `
+    <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-primary" id="classroom-import-btn" disabled onclick="submitClassroomImport()">Import</button>
+  `);
+}
+
+async function previewClassroomExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const preview = document.getElementById('classroom-excel-preview');
+  preview.innerHTML = '<div class="loading-spinner" style="height:60px"><div class="spinner"></div></div>';
+  window._excelClassrooms = [];
+  document.getElementById('classroom-import-btn').disabled = true;
+
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+    if (!rows.length) {
+      preview.innerHTML = '<p class="text-danger">File is empty.</p>';
+      return;
+    }
+
+    const headerRow = rows[0] || [];
+    const nonEmpty = headerRow.filter(c => String(c || '').trim()).length;
+    const h0 = String(headerRow[0] || '').trim().toLowerCase();
+    const h1 = String(headerRow[1] || '').trim().toLowerCase();
+
+    if (nonEmpty >= 5) {
+      preview.innerHTML = `<p class="text-danger">⛔ This looks like a <strong>Courses</strong> file. Please import it on the <strong>Courses</strong> page.</p>`;
+      return;
+    }
+
+    if (nonEmpty !== 2 || (h0 !== 'room code' && h0 !== 'classroom code') || h1 !== 'capacity') {
+      preview.innerHTML = `
+        <p class="text-danger">⛔ Wrong file format.</p>
+        <p class="text-muted text-sm" style="margin-top:6px">Expected header (row 1): <code>Room Code | Capacity</code></p>`;
+      return;
+    }
+
+    // Strict row-by-row validation — any error → reject entire file
+    const parsed = [];
+    const errors = [];
+
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const roomCode = String(r[0] || '').trim().toUpperCase();
+      const capRaw   = r[1];
+
+      // Skip fully blank rows
+      if (!roomCode && (capRaw === undefined || capRaw === null || String(capRaw).trim() === '')) continue;
+
+      const rowNum = i + 1;
+
+      if (!roomCode) {
+        errors.push({ row: rowNum, msg: 'Room Code is required' });
+        continue;
+      }
+
+      let capacity = 0;
+      if (capRaw !== undefined && capRaw !== null && String(capRaw).trim() !== '') {
+        const n = Number(String(capRaw).trim());
+        if (!Number.isInteger(n) || isNaN(n) || n < 0) {
+          errors.push({ row: rowNum, msg: `Capacity "${capRaw}" must be a non-negative integer` });
+          continue;
+        }
+        capacity = n;
+      }
+
+      parsed.push({ roomCode, capacity });
+    }
+
+    if (errors.length > 0) {
+      preview.innerHTML = `
+        <p class="text-danger">⛔ <strong>${errors.length} validation error(s)</strong> — fix the file and re-upload. Nothing will be imported.</p>
+        <table style="font-size:12px;width:100%;margin-top:8px">
+          <thead><tr><th>Row</th><th>Error</th></tr></thead>
+          <tbody>${errors.map(e => `<tr><td>Row ${e.row}</td><td>${esc(e.msg)}</td></tr>`).join('')}</tbody>
+        </table>`;
+      return;
+    }
+
+    if (parsed.length === 0) {
+      preview.innerHTML = '<p class="text-danger">No data rows found.</p>';
+      return;
+    }
+
+    // Duplicate detection against existing classrooms
+    const existing = await API.getClassrooms();
+    const existingCodes = new Set(existing.map(c => c.roomCode.toUpperCase()));
+
+    const newItems = parsed.filter(c => !existingCodes.has(c.roomCode));
+    const dupItems = parsed.filter(c =>  existingCodes.has(c.roomCode));
+
+    window._excelClassrooms = newItems;
+
+    const showRows = parsed.slice(0, 15).map(c => {
+      const isDup = existingCodes.has(c.roomCode);
+      return `<tr style="${isDup ? 'opacity:0.5;' : ''}">
+        <td>${isDup ? '⚠ ' : ''}${esc(c.roomCode)}</td>
+        <td>${c.capacity}</td>
+        <td>${isDup
+          ? '<span class="badge badge-warning">Already exists</span>'
+          : '<span class="badge badge-success">New</span>'}</td>
+      </tr>`;
+    }).join('');
+
+    preview.innerHTML = `
+      <p style="margin-bottom:8px">
+        <strong>${newItems.length} new</strong> to import
+        ${dupItems.length > 0 ? ` · <span style="color:#d97706">${dupItems.length} duplicate(s) will be skipped</span>` : ''}
+      </p>
+      <table style="font-size:12px;width:100%">
+        <thead><tr><th>Room Code</th><th>Capacity</th><th>Status</th></tr></thead>
+        <tbody>
+          ${showRows}
+          ${parsed.length > 15 ? `<tr><td colspan="3" style="text-align:center;color:var(--text-muted)">… and ${parsed.length - 15} more</td></tr>` : ''}
+        </tbody>
+      </table>
+      ${newItems.length === 0 ? '<p style="color:#d97706;margin-top:8px">All classrooms already exist. Nothing to import.</p>' : ''}`;
+
+    document.getElementById('classroom-import-btn').disabled = newItems.length === 0;
+  } catch (e) {
+    preview.innerHTML = `<p class="text-danger">Failed to parse file: ${esc(e.message)}</p>`;
+  }
+}
+
+async function submitClassroomImport() {
+  const classrooms = window._excelClassrooms;
+  if (!classrooms?.length) return;
+
+  const btn = document.getElementById('classroom-import-btn');
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+
+  let saved = 0;
+  let skipped = 0;
+
+  for (const c of classrooms) {
+    try {
+      const id = c.roomCode + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      await API.addClassroom({ id, roomCode: c.roomCode, capacity: c.capacity });
+      saved++;
+    } catch (e) {
+      skipped++;
+    }
+  }
+
+  closeModal();
+  toast(skipped > 0
+    ? `${saved} classrooms imported, ${skipped} failed.`
+    : `${saved} classrooms imported.`,
+    'success');
+  await renderClassrooms();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -872,7 +1048,7 @@ function openImportModal() {
   openModal('Import Courses from Excel', `
     <div class="info-box">
       Expected columns (row 1 = header, data from row 2):<br>
-      <code style="font-size:11px">Code | Name | Lecturer | Dept | Email | Semester | StudentCount | Priority | LecHrs | LabHrs</code>
+      <code style="font-size:11px">Course Code | Course Name | Lecturer | Department | Email | Semester | StudentCount | priority | LecHours | LabHours</code>
     </div>
     <div class="form-group">
       <label>Excel File (.xlsx / .xls)</label>
@@ -892,6 +1068,8 @@ async function previewExcel(input) {
   if (!file) return;
   const preview = document.getElementById('excel-preview');
   preview.innerHTML = '<div class="loading-spinner" style="height:60px"><div class="spinner"></div></div>';
+  window._excelCourses = [];
+  document.getElementById('import-btn').disabled = true;
 
   try {
     const buf = await file.arrayBuffer();
@@ -899,47 +1077,162 @@ async function previewExcel(input) {
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-    const courses = [];
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i];
-      const code = String(r[0] || '').trim();
-      const name = String(r[1] || '').trim();
-      if (!code || !name) continue;
-      courses.push({
-        code,
-        name,
-        lecturer: String(r[2] || '').trim(),
-        department: String(r[3] || 'CS').trim(),
-        email: String(r[4] || '').trim(),
-        semester: parseInt(r[5]) || 1,
-        studentCount: parseInt(r[6]) || 0,
-        priority: parseInt(r[7]) || 1,
-        lectureHours: parseInt(r[8]) || 0,
-        labHours: parseInt(r[9]) || 0,
-      });
-    }
-
-    window._excelCourses = courses;
-
-    if (courses.length === 0) {
-      preview.innerHTML = '<p class="text-danger">No valid rows found. Check the file format.</p>';
+    if (!rows.length) {
+      preview.innerHTML = '<p class="text-danger">File is empty.</p>';
       return;
     }
 
-    preview.innerHTML = `
-      <p style="margin-bottom:8px"><strong>${courses.length} courses</strong> ready to import:</p>
-      <table style="font-size:12px;width:100%">
-        <thead><tr><th>Code</th><th>Name</th><th>Lecturer</th><th>Dept</th><th>Sem</th><th>Pri</th></tr></thead>
-        <tbody>${courses.slice(0,10).map(c => `
-          <tr>
-            <td>${esc(c.code)}</td><td>${esc(c.name)}</td><td>${esc(c.lecturer)}</td>
-            <td>${esc(c.department)}</td><td>${c.semester}</td><td>${c.priority}</td>
-          </tr>`).join('')}
-          ${courses.length > 10 ? `<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">… and ${courses.length-10} more</td></tr>` : ''}
-        </tbody>
-      </table>`;
+    const headerRow = rows[0] || [];
+    const nonEmpty = headerRow.filter(c => String(c || '').trim()).length;
+    const h0 = String(headerRow[0] || '').trim().toLowerCase();
+    const h1 = String(headerRow[1] || '').trim().toLowerCase();
 
-    document.getElementById('import-btn').disabled = false;
+    // Detect classrooms file (2 cols: room code + capacity)
+    if (nonEmpty <= 2 && (h0 === 'room code' || h0 === 'classroom code') && h1 === 'capacity') {
+      preview.innerHTML = `<p class="text-danger">⛔ This looks like a <strong>Classrooms</strong> file. Please import it on the <strong>Classrooms</strong> page.</p>`;
+      return;
+    }
+
+    // Courses file must have exactly 10 non-empty columns
+    if (nonEmpty < 10) {
+      preview.innerHTML = `
+        <p class="text-danger">⛔ Wrong file format — found ${nonEmpty} column(s), expected 10.</p>
+        <p class="text-muted text-sm" style="margin-top:6px">Expected header (row 1):<br>
+        <code>Course Code | Course Name | Lecturer | Department | Email | Semester | StudentCount | priority | LecHours | LabHours</code></p>`;
+      return;
+    }
+
+    // Strict row-by-row validation — any error → reject entire file
+    const parsed = [];
+    const errors = [];
+
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const code       = String(r[0] || '').trim();
+      const name       = String(r[1] || '').trim();
+      const lecturer   = String(r[2] || '').trim();
+      const department = String(r[3] || '').trim();
+      const email      = String(r[4] || '').trim();
+
+      // Skip fully blank rows
+      if (!code && !name && !lecturer && !department && !email) continue;
+
+      const rowNum = i + 1;
+      const rowErrors = [];
+
+      if (!code)       rowErrors.push('Course Code is required');
+      if (!name)       rowErrors.push('Course Name is required');
+      if (!lecturer)   rowErrors.push('Lecturer is required');
+      if (!department) rowErrors.push('Department is required');
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+        rowErrors.push(`Email "${email || '(empty)'}" is not valid`);
+
+      // Integer fields — text in these fields is a hard error
+      const intFields = [
+        { idx: 5, name: 'Semester',      min: 1, def: 1 },
+        { idx: 6, name: 'StudentCount',  min: 0, def: 0 },
+        { idx: 7, name: 'priority',      min: 1, def: 1 },
+        { idx: 8, name: 'LecHours',      min: 0, def: 0 },
+        { idx: 9, name: 'LabHours',      min: 0, def: 0 },
+      ];
+      const intVals = {};
+      for (const f of intFields) {
+        const raw = r[f.idx];
+        if (raw === undefined || raw === null || String(raw).trim() === '') {
+          intVals[f.name] = f.def;
+        } else {
+          const n = Number(String(raw).trim());
+          if (!Number.isInteger(n) || isNaN(n)) {
+            rowErrors.push(`${f.name} "${raw}" must be an integer, not text`);
+          } else if (n < f.min) {
+            rowErrors.push(`${f.name} must be ≥ ${f.min} (got ${n})`);
+          } else {
+            intVals[f.name] = n;
+          }
+        }
+      }
+
+      if (rowErrors.length > 0) {
+        errors.push({ row: rowNum, msgs: rowErrors });
+      } else {
+        parsed.push({
+          code, name, lecturer, department, email,
+          semester:     intVals['Semester'],
+          studentCount: intVals['StudentCount'],
+          priority:     intVals['priority'],
+          lectureHours: intVals['LecHours'],
+          labHours:     intVals['LabHours'],
+        });
+      }
+    }
+
+    if (errors.length > 0) {
+      const errorRows = errors.flatMap(e =>
+        e.msgs.map((m, idx) => `<tr>
+          <td>${idx === 0 ? `Row ${e.row}` : ''}</td>
+          <td>${esc(m)}</td>
+        </tr>`)
+      ).join('');
+      preview.innerHTML = `
+        <p class="text-danger">⛔ <strong>${errors.length} row(s) with errors</strong> — fix the file and re-upload. Nothing will be imported.</p>
+        <table style="font-size:12px;width:100%;margin-top:8px">
+          <thead><tr><th>Row</th><th>Error</th></tr></thead>
+          <tbody>${errorRows}</tbody>
+        </table>`;
+      return;
+    }
+
+    if (parsed.length === 0) {
+      preview.innerHTML = '<p class="text-danger">No data rows found.</p>';
+      return;
+    }
+
+    // Duplicate detection: (code | department | lecturerUsername) triple
+    const [existingCourses, existingUsers] = await Promise.all([API.getCourses(), API.getUsers()]);
+    const existingUsernames = existingUsers.map(u => u.username);
+    const existingKeys = new Set(
+      existingCourses.map(c => `${c.code}|${c.department}|${(c.lecturerUsername || '').toLowerCase()}`)
+    );
+
+    const withMeta = parsed.map(c => {
+      const uname = usernameFromEmail(c.email, c.lecturer, existingUsernames);
+      const isDup = existingKeys.has(`${c.code}|${c.department}|${uname.toLowerCase()}`);
+      return { ...c, _username: uname, _isDup: isDup };
+    });
+
+    const newItems = withMeta.filter(c => !c._isDup);
+    const dupItems = withMeta.filter(c =>  c._isDup);
+
+    window._excelCourses = newItems;
+
+    const showRows = withMeta.slice(0, 10).map(c => `
+      <tr style="${c._isDup ? 'opacity:0.5;' : ''}">
+        <td>${c._isDup ? '⚠ ' : ''}${esc(c.code)}</td>
+        <td>${esc(c.name)}</td>
+        <td>${esc(c.lecturer)}</td>
+        <td>${esc(c.department)}</td>
+        <td>${c.semester}</td>
+        <td>${c.priority}</td>
+        <td>${c._isDup
+          ? '<span class="badge badge-warning">Duplicate</span>'
+          : '<span class="badge badge-success">New</span>'}</td>
+      </tr>`).join('');
+
+    preview.innerHTML = `
+      <p style="margin-bottom:8px">
+        <strong>${newItems.length} new</strong> to import
+        ${dupItems.length > 0 ? ` · <span style="color:#d97706">${dupItems.length} duplicate(s) will be skipped</span>` : ''}
+      </p>
+      <table style="font-size:12px;width:100%">
+        <thead><tr><th>Code</th><th>Name</th><th>Lecturer</th><th>Dept</th><th>Sem</th><th>Pri</th><th>Status</th></tr></thead>
+        <tbody>
+          ${showRows}
+          ${withMeta.length > 10 ? `<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">… and ${withMeta.length - 10} more</td></tr>` : ''}
+        </tbody>
+      </table>
+      ${newItems.length === 0 ? '<p style="color:#d97706;margin-top:8px">All courses already exist. Nothing to import.</p>' : ''}`;
+
+    document.getElementById('import-btn').disabled = newItems.length === 0;
   } catch (e) {
     preview.innerHTML = `<p class="text-danger">Failed to parse file: ${esc(e.message)}</p>`;
   }
@@ -997,7 +1290,11 @@ async function submitImport() {
     }));
     await API.importCourses(payload);
     closeModal();
-    toast(`${courses.length} course(s) imported${newCredentials.length ? `, ${newCredentials.length} instructor(s) created` : ''}`, 'success');
+    toast(
+      `${payload.length} course(s) imported` +
+      (newCredentials.length ? `, ${newCredentials.length} instructor account(s) created` : ''),
+      'success'
+    );
 
     // 4. Show credentials dialog if new instructors were created
     if (newCredentials.length > 0) {

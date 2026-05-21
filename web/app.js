@@ -125,6 +125,7 @@ const state = {
   calAvailability: {},    // {day: [slots]}
   calOtherSchedules: [],  // [{instructorUsername, slots}]
   calClassrooms: [],
+  _calPhasePriorities: [], _calPhaseIdx: 0,
   // xai
   xaiResults: null,
   xaiExpandedIdx: -1,
@@ -1376,6 +1377,8 @@ async function renderCalendar() {
   state._calCurrentPriority = currentPriority;
   state._calIsSuperAdmin = isSuperAdmin;
   state._calAdminDept = adminDept;
+  state._calPhasePriorities = priorities;
+  state._calPhaseIdx = phaseIdx;
 
   // Reset selection state when re-rendering
   state.calSelectedCourse = null;
@@ -1417,7 +1420,7 @@ async function renderCalendar() {
       </div>
       <div style="display:flex;gap:8px">
         ${isSuperAdmin && !isLastPhase && totalPhases > 0 ? `
-          <button class="btn btn-sm btn-primary" onclick="advancePhase(${phaseIdx+2}, ${priorities[phaseIdx+1] ?? 0})">
+          <button class="btn btn-sm btn-primary" onclick="advancePhase(${phaseIdx+2}, ${priorities[phaseIdx+1] ?? 0}, ${currentPriority ?? 0})">
             Phase ${phaseIdx+2} →
           </button>` : ''}
         <button class="btn btn-sm btn-ghost" onclick="renderCalendar()">↻ Refresh</button>
@@ -1491,7 +1494,7 @@ async function renderCalendar() {
   `);
 }
 
-function buildCalGrid(draft, availability) {
+function buildCalGrid(draft, availability, blockedKeys = new Set()) {
   const availSet = new Set();
   Object.entries(availability || {}).forEach(([day, slots]) =>
     (slots || []).forEach(s => availSet.add(`${day}_${s}`)));
@@ -1508,6 +1511,7 @@ function buildCalGrid(draft, availability) {
       const key = `${day}_${slot}`;
       const course = draft[key];
       const isAvail = availSet.has(key);
+      const isBlocked = blockedKeys.has(key);
       if (course && course.duration === -1) {
         html += `<td class="grid-cell continuation" title="Continuation">`
               + `<div class="course-chip" style="opacity:.55">`
@@ -1521,6 +1525,8 @@ function buildCalGrid(draft, availability) {
               + `<div class="room">${esc(course.classroomId || '')}</div>`
               + `${course.isLab ? '<div class="label">LAB</div>' : ''}`
               + `</div></td>`;
+      } else if (isBlocked) {
+        html += `<td class="grid-cell semester-blocked" onclick="calCellClick('${esc(day)}','${esc(slot)}')" title="Semester conflict: a course for the same semester is already scheduled here">✕</td>`;
       } else {
         const cellClass = isAvail ? 'grid-cell target' : 'grid-cell empty';
         html += `<td class="${cellClass}" onclick="calCellClick('${esc(day)}','${esc(slot)}')" title="${isAvail ? 'Available' : ''}"></td>`;
@@ -1534,7 +1540,37 @@ function buildCalGrid(draft, availability) {
 
 function refreshCalGrid() {
   const wrap = document.getElementById('cal-grid-wrap');
-  if (wrap) wrap.innerHTML = buildCalGrid(state.calDraft, state.calAvailability);
+  if (wrap) {
+    const blocked = calSemesterBlockedKeys(state.calSelectedCourse);
+    wrap.innerHTML = buildCalGrid(state.calDraft, state.calAvailability, blocked);
+  }
+}
+
+function calPrevPhasePriorities() {
+  const p = state._calPhasePriorities || [];
+  const idx = state._calPhaseIdx || 0;
+  return new Set(p.slice(0, idx));
+}
+
+function calSemesterBlockedKeys(course) {
+  if (!course || !course.semester) return new Set();
+  const prevP = calPrevPhasePriorities();
+  const blocked = new Set();
+  const others = (state.calOtherSchedules || []).filter(s => s.instructorUsername !== state.calInstructor);
+  for (const day of DAYS) {
+    for (const slot of TIME_SLOTS) {
+      const key = `${day}_${slot}`;
+      const hit = others.some(sched => {
+        const sc = (sched.slots || {})[key];
+        if (!sc) return false;
+        if (String(sc.semester) !== String(course.semester)) return false;
+        if (prevP.has(sc.priority)) return true;
+        return sc.department === course.department;
+      });
+      if (hit) blocked.add(key);
+    }
+  }
+  return blocked;
 }
 
 async function calChangeInstructor(username) {
@@ -1574,9 +1610,9 @@ async function calChangeInstructor(username) {
 }
 
 function calSelectCourse(el, code) {
-  const courses = state._courses || (window._calCourses || []);
-  const allCourses = courses.length ? courses : [];
-  state.calSelectedCourse = allCourses.find(c => c.code === code) || { code };
+  const allCourses = state._calAllCourses || state._courses || window._calCourses || [];
+  state.calSelectedCourse = allCourses.find(c => c.code === code && c.lecturerUsername === state.calInstructor)
+    || allCourses.find(c => c.code === code) || { code };
   state.calMode = null;
 
   document.querySelectorAll('.course-pill').forEach(p => p.classList.remove('selected'));
@@ -1598,6 +1634,7 @@ function calSelectCourse(el, code) {
   document.getElementById('mode-lec').classList.remove('selected');
   labBtn.classList.remove('selected');
   xaiRow.style.display = 'none';
+  refreshCalGrid();
 }
 
 function calSetMode(mode) {
@@ -1632,6 +1669,28 @@ function calCellClick(day, slot) {
 
   if (!state.calSelectedCourse) { toast('Select a course first', 'warning'); return; }
   if (!state.calMode) { toast('Select Lecture or Lab mode', 'warning'); return; }
+
+  // Hard block: availability check
+  const _c = state.calSelectedCourse;
+  const _mode = state.calMode;
+  const _dur = _mode === 'lab' && _c.labHours > 0 ? _c.labHours : (_c.lectureHours > 0 ? _c.lectureHours : 1);
+  const _slotIdx = TIME_SLOTS.indexOf(slot);
+  const _needed = TIME_SLOTS.slice(_slotIdx, _slotIdx + _dur);
+  const _availSet = new Set();
+  Object.entries(state.calAvailability || {}).forEach(([d, slots]) =>
+    (slots || []).forEach(s => _availSet.add(`${d}_${s}`)));
+  const _unavail = _needed.filter(s => !_availSet.has(`${day}_${s}`));
+  if (_unavail.length > 0) {
+    toast(`Cannot assign: ${_unavail.join(', ')} is outside instructor availability.`, 'error');
+    return;
+  }
+
+  // Hard block: semester conflict check
+  const _blocked = calSemesterBlockedKeys(_c);
+  if (_needed.some(s => _blocked.has(`${day}_${s}`))) {
+    toast(`Semester conflict: a Semester ${_c.semester} course from ${_c.department} is already scheduled at this time.`, 'error');
+    return;
+  }
 
   openAssignDialog(day, slot);
 }
@@ -1763,12 +1822,54 @@ async function saveCalendar() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-async function advancePhase(nextPhaseNum, nextPriority) {
-  const ok = await confirmModal(
-    'Advance Phase',
-    `Move to <strong>PHASE_${nextPhaseNum}</strong> (Priority ${nextPriority})? <br><small>Current phase assignments will be locked.</small>`,
-    'Advance'
-  );
+async function advancePhase(nextPhaseNum, nextPriority, currentPriority) {
+  // Build unassigned courses warning
+  let unassignedHtml = '';
+  try {
+    const [courses, users] = await Promise.all([API.getCourses(), API.getUsers()]);
+    const nameMap = {};
+    users.forEach(u => { nameMap[u.username] = u.fullName || u.username; });
+
+    const unassigned = courses.filter(c =>
+      c.priority === currentPriority &&
+      (!c.lecture_assigned || (c.labHours > 0 && c.lab_assigned === false))
+    );
+
+    if (unassigned.length > 0) {
+      const items = unassigned.map(c => {
+        const name = nameMap[c.lecturerUsername] || c.lecturerUsername || '—';
+        let status = '';
+        if (!c.lecture_assigned && c.labHours > 0) status = 'lecture + lab not assigned';
+        else if (!c.lecture_assigned) status = 'not assigned';
+        else status = 'lab not assigned';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #fecaca;font-size:13px">
+          <span><strong>${esc(c.code)}</strong> <span style="color:var(--text-muted)">— ${esc(name)}</span></span>
+          <span style="color:#dc2626;font-size:11px;white-space:nowrap;margin-left:8px">${esc(status)}</span>
+        </div>`;
+      }).join('');
+
+      unassignedHtml = `
+        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 14px;margin-top:14px">
+          <p style="font-size:12px;font-weight:700;color:#dc2626;margin-bottom:8px">
+            ⚠ ${unassigned.length} course(s) not yet fully assigned:
+          </p>
+          ${items}
+        </div>`;
+    }
+  } catch (_) {}
+
+  const ok = await new Promise(resolve => {
+    _modalResolve = resolve;
+    openModal(
+      `Advance to Phase ${nextPhaseNum}`,
+      `<p>Move to <strong>PHASE_${nextPhaseNum}</strong> (Priority ${nextPriority})?</p>
+       <p class="text-muted text-sm" style="margin-top:4px">Current phase assignments will be locked. You can still proceed even if courses are unassigned.</p>
+       ${unassignedHtml}`,
+      `<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+       <button class="btn btn-primary" onclick="_modalResolve(true);_modalResolve=null;closeModal()">Advance →</button>`
+    );
+  });
+
   if (!ok) return;
   try {
     await API.setPhase(`PHASE_${nextPhaseNum}`);

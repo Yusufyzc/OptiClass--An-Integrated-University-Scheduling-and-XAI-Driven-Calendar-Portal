@@ -131,6 +131,7 @@ const state = {
   // weekly
   weeklyResults: null,
   weeklyExpandedIdx: -1,
+  _weeklySchedules: [], _weeklyCourses: [], _weeklyInstructorMap: {}, _weeklyClassroomMap: {},
   // logs
   logFilter: '',
   // users pagination
@@ -205,8 +206,9 @@ function formatDate(iso) {
 }
 
 function roleBadge(role) {
-  const map = { ADMIN: 'badge-warning', INSTRUCTOR: 'badge-info', SUPER_ADMIN: 'badge-danger' };
-  return `<span class="badge ${map[role] || 'badge-gray'}">${role}</span>`;
+  const colorMap = { ADMIN: 'badge-warning', INSTRUCTOR: 'badge-info', SUPER_ADMIN: 'badge-danger' };
+  const labelMap = { ADMIN: 'Admin', INSTRUCTOR: 'Instructor', SUPER_ADMIN: 'System Admin' };
+  return `<span class="badge ${colorMap[role] || 'badge-gray'}">${labelMap[role] || role}</span>`;
 }
 
 function scoreClass(s) { return s >= 0.85 ? 'high' : s >= 0.60 ? 'mid' : 'low'; }
@@ -284,7 +286,7 @@ function initAuth(tokenData) {
   buildSidebar();
   showApp();
   document.getElementById('sidebar-username').textContent = state.username;
-  document.getElementById('sidebar-role').textContent = state.role.replace('_', ' ');
+  document.getElementById('sidebar-role').textContent = ({ADMIN:'Admin',SUPER_ADMIN:'System Admin',INSTRUCTOR:'Instructor'})[state.role] || state.role;
   document.getElementById('sidebar-avatar').textContent = state.username[0].toUpperCase();
   const deptEl = document.getElementById('sidebar-dept');
   if (deptEl) deptEl.textContent = (state.role === 'ADMIN' && state.department) ? state.department : '';
@@ -2013,16 +2015,26 @@ async function changeAvailInstructor(username) {
 // WEEKLY SCHEDULE
 // ══════════════════════════════════════════════════════════
 async function renderWeekly() {
-  const [phaseData, priorityData, schedules, courses, users] = await Promise.all([
-    API.getPhase(), API.getPhasePriorities(), API.getAllSchedules(), API.getCourses(), API.getUsers()
+  const [phaseData, priorityData, schedules, courses, users, classrooms] = await Promise.all([
+    API.getPhase(), API.getPhasePriorities(), API.getAllSchedules(), API.getCourses(), API.getUsers(), API.getClassrooms()
   ]);
 
   const phase = phaseData.phase || 'PHASE_1';
   const priorities = priorityData.phasePriorities || [];
 
-  // Build current schedule display
   const instructorMap = {};
   users.forEach(u => { instructorMap[u.username] = u.fullName || u.username; });
+
+  const classroomMap = {};
+  (classrooms || []).forEach(c => { classroomMap[c.id] = c.roomCode; });
+
+  state._weeklySchedules = schedules;
+  state._weeklyCourses = courses;
+  state._weeklyInstructorMap = instructorMap;
+  state._weeklyClassroomMap = classroomMap;
+
+  const depts = [...new Set((courses || []).map(c => c.department).filter(Boolean))].sort();
+  const semesters = [...new Set((courses || []).map(c => c.semester).filter(s => s != null))].sort((a, b) => a - b);
 
   setContent(`
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
@@ -2041,15 +2053,41 @@ async function renderWeekly() {
       <button class="btn btn-ghost" style="margin-top:20px" onclick="renderWeekly()">↻ Refresh</button>
     </div>
 
-    <!-- Current Schedule Summary -->
-    <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button id="weekly-btn-phase" class="btn btn-primary" onclick="weeklySetView('phase')" style="font-size:13px;padding:6px 14px">Phase View</button>
+      <button id="weekly-btn-dept" class="btn btn-ghost" onclick="weeklySetView('dept')" style="font-size:13px;padding:6px 14px">Dept / Semester View</button>
+    </div>
+
+    <!-- Phase View -->
+    <div id="weekly-phase-view" class="card" style="margin-bottom:16px">
       <div class="card-header">
         <span class="card-title">Current Schedule Overview</span>
         <span class="text-muted text-sm">${schedules.length} instructors with schedules</span>
       </div>
       <div class="card-body" style="padding:0">
-        ${buildCurrentScheduleGrid(schedules, courses, instructorMap)}
+        ${buildCurrentScheduleGrid(schedules, instructorMap, classroomMap)}
       </div>
+    </div>
+
+    <!-- Dept / Semester View -->
+    <div id="weekly-dept-view" style="display:none;margin-bottom:16px">
+      <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap">
+        <div>
+          <label class="text-sm" style="font-weight:600;display:block;margin-bottom:4px">Department</label>
+          <select class="filter-select" id="weekly-dept-select" onchange="weeklyFilterGrid()">
+            <option value="">All Departments</option>
+            ${depts.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="text-sm" style="font-weight:600;display:block;margin-bottom:4px">Semester</label>
+          <select class="filter-select" id="weekly-sem-select" onchange="weeklyFilterGrid()">
+            <option value="">All Semesters</option>
+            ${semesters.map(s => `<option value="${s}">Semester ${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div id="weekly-filtered-grid"></div>
     </div>
 
     <!-- XAI Results (loaded on demand) -->
@@ -2057,15 +2095,22 @@ async function renderWeekly() {
   `);
 }
 
-function buildCurrentScheduleGrid(schedules, courses, instructorMap) {
-  // Build a combined view: each cell shows all assigned courses
-  const grid = {}; // {day_slot: [{code, instructor, dept, room}]}
+function buildCurrentScheduleGrid(schedules, instructorMap, classroomMap) {
+  classroomMap = classroomMap || {};
+  const grid = {};
   schedules.forEach(s => {
     Object.entries(s.slots || {}).forEach(([key, c]) => {
-      if (!c || c.duration === -1) return;
+      if (!c) return;
+      const isCont = c.duration === -1;
       if (!grid[key]) grid[key] = [];
-      grid[key].push({ code: c.code, instructor: instructorMap[s.instructorUsername] || s.instructorUsername,
-                       dept: c.department || '', room: c.classroomId || '' });
+      const roomCode = (c.classroomId && classroomMap[c.classroomId]) || c.classroomId || '';
+      grid[key].push({
+        code: c.code,
+        instructor: instructorMap[s.instructorUsername] || s.instructorUsername,
+        dept: c.department || '',
+        room: roomCode,
+        cont: isCont
+      });
     });
   });
 
@@ -2083,9 +2128,9 @@ function buildCurrentScheduleGrid(schedules, courses, instructorMap) {
       } else {
         const chips = items.map(it => {
           const color = deptColor(it.dept);
-          return `<div style="font-size:9px;background:${color}18;border-left:2px solid ${color};padding:1px 4px;margin-bottom:1px;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          return `<div style="font-size:9px;background:${color}18;border-left:2px solid ${color};padding:1px 4px;margin-bottom:1px;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:${it.cont ? 0.55 : 1}">
             <strong style="color:${color}">${esc(it.code)}</strong>
-            <span style="color:var(--text-muted)"> ${esc(it.room)}</span>
+            ${it.room ? `<span style="color:var(--text-muted)"> ${esc(it.room)}</span>` : ''}
           </div>`;
         }).join('');
         html += `<td class="grid-cell occupied" style="padding:3px;vertical-align:top">${chips}</td>`;
@@ -2199,6 +2244,63 @@ function buildWeeklyMiniGrid(assignments) {
   });
   html += `</tbody></table></div>`;
   return html;
+}
+
+function weeklySetView(mode) {
+  const phaseView = document.getElementById('weekly-phase-view');
+  const deptView  = document.getElementById('weekly-dept-view');
+  const phaseBtn  = document.getElementById('weekly-btn-phase');
+  const deptBtn   = document.getElementById('weekly-btn-dept');
+  if (mode === 'phase') {
+    if (phaseView) phaseView.style.display = '';
+    if (deptView)  deptView.style.display  = 'none';
+    if (phaseBtn)  phaseBtn.className = 'btn btn-primary';
+    if (deptBtn)   deptBtn.className  = 'btn btn-ghost';
+  } else {
+    if (phaseView) phaseView.style.display = 'none';
+    if (deptView)  deptView.style.display  = '';
+    if (phaseBtn)  phaseBtn.className = 'btn btn-ghost';
+    if (deptBtn)   deptBtn.className  = 'btn btn-primary';
+    weeklyFilterGrid();
+  }
+}
+
+function weeklyFilterGrid() {
+  const dept    = document.getElementById('weekly-dept-select')?.value || '';
+  const semStr  = document.getElementById('weekly-sem-select')?.value  || '';
+  const semester = semStr ? parseInt(semStr) : null;
+
+  const schedules      = state._weeklySchedules      || [];
+  const instructorMap  = state._weeklyInstructorMap  || {};
+  const classroomMap   = state._weeklyClassroomMap   || {};
+
+  const filteredSchedules = schedules.map(s => {
+    const filteredSlots = Object.fromEntries(
+      Object.entries(s.slots || {}).filter(([, c]) => {
+        if (!c) return false;
+        if (dept && c.department !== dept) return false;
+        if (semester !== null && c.semester !== semester) return false;
+        return true;
+      })
+    );
+    return { ...s, slots: filteredSlots };
+  }).filter(s => Object.keys(s.slots).length > 0);
+
+  const label   = (dept || 'All Depts') + ' · ' + (semester !== null ? `Semester ${semester}` : 'All Semesters');
+  const gridDiv = document.getElementById('weekly-filtered-grid');
+  if (!gridDiv) return;
+  gridDiv.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">${esc(label)}</span>
+        <span class="text-muted text-sm">${filteredSchedules.length} instructor(s)</span>
+      </div>
+      <div class="card-body" style="padding:0">
+        ${filteredSchedules.length > 0
+          ? buildCurrentScheduleGrid(filteredSchedules, instructorMap, classroomMap)
+          : '<p class="hint" style="padding:16px">No scheduled courses match this filter.</p>'}
+      </div>
+    </div>`;
 }
 
 function toggleWeekly(idx) {
@@ -2625,8 +2727,21 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('login-form').addEventListener('submit', handleLogin);
 
   // Logout
-  document.getElementById('logout-btn').addEventListener('click', () => {
-    if (confirm('Sign out?')) logout();
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    const confirmed = await new Promise(resolve => {
+      _modalResolve = resolve;
+      openModal(
+        'Sign Out',
+        `<div style="text-align:center;padding:8px 0">
+          <div style="font-size:40px;margin-bottom:12px">👋</div>
+          <p style="font-size:15px;color:var(--text-main);margin-bottom:4px">Are you sure you want to sign out?</p>
+          <p class="text-muted text-sm">You will be returned to the login screen.</p>
+        </div>`,
+        `<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+         <button class="btn btn-primary" onclick="_modalResolve(true);_modalResolve=null;closeModal()">Sign Out</button>`
+      );
+    });
+    if (confirmed) logout();
   });
 
   // Close modal on overlay click
@@ -2648,7 +2763,7 @@ document.addEventListener('DOMContentLoaded', () => {
     buildSidebar();
     showApp();
     document.getElementById('sidebar-username').textContent = state.username;
-    document.getElementById('sidebar-role').textContent = state.role.replace('_', ' ');
+    document.getElementById('sidebar-role').textContent = ({ADMIN:'Admin',SUPER_ADMIN:'System Admin',INSTRUCTOR:'Instructor'})[state.role] || state.role;
     document.getElementById('sidebar-avatar').textContent = state.username[0].toUpperCase();
     const deptEl = document.getElementById('sidebar-dept');
     if (deptEl) deptEl.textContent = (state.role === 'ADMIN' && state.department) ? state.department : '';

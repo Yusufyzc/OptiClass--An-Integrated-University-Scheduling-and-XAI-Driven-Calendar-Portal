@@ -46,12 +46,14 @@ fun UpdateCalendarPage(
     val totalPhases = AppRepository.totalPhases
     val currentPhaseIndex = AppRepository.currentPhaseIndex
     val isLastPhase = totalPhases > 0 && currentPhaseIndex >= totalPhases - 1
+    val adminDept = AppRepository.currentUserDepartment
     val instructors = if (AppRepository.phasePriorities.isEmpty()) {
         AppRepository.users.filter { it.role == UserRole.INSTRUCTOR }
+            .let { list -> if (adminDept.isBlank()) list else list.filter { instr -> AppRepository.courseImports.any { it.lecturer == instr.username && it.department == adminDept } } }
     } else {
         AppRepository.users.filter { user ->
             user.role == UserRole.INSTRUCTOR && user.courses.any { c -> c.priority == currentPhasePriority }
-        }
+        }.let { list -> if (adminDept.isBlank()) list else list.filter { instr -> AppRepository.courseImports.any { it.lecturer == instr.username && it.department == adminDept } } }
     }
     val scope = rememberCoroutineScope()
     var isDirty by remember { mutableStateOf(false) }

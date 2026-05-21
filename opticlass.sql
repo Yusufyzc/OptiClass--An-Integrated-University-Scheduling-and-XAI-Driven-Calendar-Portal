@@ -340,7 +340,7 @@ COPY public.schedules (instructor_username, slots, updated_at) FROM stdin;
 --
 
 COPY public.users (username, password_hash, role, full_name, email, avatar_url, department, must_change_password, created_at) FROM stdin;
-admin	240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9	ADMIN	System Administrator	admin@admin.com	\N	Admin	f	2026-04-30 16:23:30.499699+03
+admin	240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9	ADMIN	System Administrator	admin@admin.com	\N	CENG	f	2026-04-30 16:23:30.499699+03
 instructor	c1437a55f6e93b7049c4064af1b0920974e383a435283f5d0b0496ee4a8a47b5	INSTRUCTOR	Test Instructor	instructor@example.com	\N	Computer Engineering	f	2026-04-30 16:23:30.499699+03
 super_admin	357c86da9d4fdafb100d449d9cb3c242183f3a56c4b316eb8ba87aaf1bb1d679	SUPER_ADMIN	Super Administrator	superadmin@opticlass.local	\N	System	f	2026-04-30 16:23:30.499699+03
 \.

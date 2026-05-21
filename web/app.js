@@ -1370,6 +1370,10 @@ async function renderCalendar() {
 
   state.calClassrooms = classrooms;
   state.calOtherSchedules = schedules;
+  state._calAllCourses = courses;
+  state._calCurrentPriority = currentPriority;
+  state._calIsSuperAdmin = isSuperAdmin;
+  state._calAdminDept = adminDept;
 
   // Reset selection state when re-rendering
   state.calSelectedCourse = null;
@@ -1540,9 +1544,31 @@ async function calChangeInstructor(username) {
   const availArr = await API.getAvailabilities();
   const avail = availArr.find(a => a.instructorUsername === username);
   state.calAvailability = avail?.slots || {};
+
+  // Update course pills for newly selected instructor
+  const allCourses = state._calAllCourses || [];
+  const curPriority = state._calCurrentPriority;
+  const isSA = state._calIsSuperAdmin;
+  const adminDept = state._calAdminDept;
+  const instrCourses = allCourses.filter(c =>
+    c.lecturerUsername === username &&
+    (curPriority === null || c.priority === curPriority) &&
+    (isSA || c.department === adminDept)
+  );
+  const selector = document.getElementById('course-selector');
+  if (selector) {
+    selector.innerHTML = instrCourses.length === 0
+      ? '<span class="text-muted text-sm">No courses for this phase</span>'
+      : instrCourses.sort((a,b) => b.priority - a.priority || b.studentCount - a.studentCount).map(c => `
+          <div class="course-pill" data-code="${esc(c.code)}" onclick="calSelectCourse(this, '${esc(c.code)}')">
+            ${esc(c.code)}
+            ${c.lecture_assigned ? '<small style="color:var(--success)">✓L</small>' : ''}
+            ${c.lab_assigned === true ? '<small style="color:var(--success)">✓B</small>' : ''}
+          </div>`).join('');
+  }
+
   refreshCalGrid();
   document.getElementById('cal-mode-row').style.display = 'none';
-  document.querySelectorAll('.course-pill').forEach(p => p.classList.remove('selected'));
 }
 
 function calSelectCourse(el, code) {

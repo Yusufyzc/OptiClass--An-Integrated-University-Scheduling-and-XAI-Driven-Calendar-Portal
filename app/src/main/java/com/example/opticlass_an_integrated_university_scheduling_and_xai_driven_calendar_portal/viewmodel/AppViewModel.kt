@@ -66,11 +66,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val token = prefs.getString(KEY_TOKEN, null)
         val username = prefs.getString(KEY_USERNAME, null)
         val roleStr = prefs.getString(KEY_ROLE, "INSTRUCTOR")
+        val dept = prefs.getString(KEY_DEPARTMENT, "") ?: ""
 
         if (token != null && username != null) {
             authToken = token
             currentUserName = username
-            userRole = if (roleStr == "ADMIN") UserRole.ADMIN else UserRole.INSTRUCTOR
+            userRole = if (roleStr == "ADMIN" || roleStr == "SUPER_ADMIN") UserRole.ADMIN else UserRole.INSTRUCTOR
+            AppRepository.currentUserDepartment = if (roleStr == "SUPER_ADMIN") "" else dept
             isLoggedIn = true
             fetchInitialData()
         }
@@ -86,13 +88,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     val body = response.body()!!
                     authToken = "Bearer ${body.token}"
                     currentUserName = body.username
-                    userRole = if (body.role == "ADMIN") UserRole.ADMIN else UserRole.INSTRUCTOR
+                    userRole = if (body.role == "ADMIN" || body.role == "SUPER_ADMIN") UserRole.ADMIN else UserRole.INSTRUCTOR
+                    AppRepository.currentUserDepartment = if (body.role == "SUPER_ADMIN") "" else (body.department ?: "")
                     isLoggedIn = true
 
                     prefs.edit().apply {
                         putString(KEY_TOKEN, authToken)
                         putString(KEY_USERNAME, currentUserName)
                         putString(KEY_ROLE, body.role)
+                        putString(KEY_DEPARTMENT, body.department ?: "")
                         apply()
                     }
 
@@ -720,6 +724,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         currentUserName = ""
         authToken = ""
         mustChangePassword = false
+        AppRepository.currentUserDepartment = ""
         prefs.edit().clear().apply()
     }
 
@@ -727,5 +732,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private const val KEY_TOKEN = "auth_token"
         private const val KEY_USERNAME = "username"
         private const val KEY_ROLE = "user_role"
+        private const val KEY_DEPARTMENT = "user_department"
     }
 }

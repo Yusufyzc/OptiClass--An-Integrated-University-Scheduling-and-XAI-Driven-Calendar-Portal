@@ -800,8 +800,31 @@ def send_notif(notif: NotificationDto, token_data: dict = Depends(verify_token))
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute("INSERT INTO notifications (recipient_username, text) VALUES (%s,%s)",
-                    (notif.recipientUsername, notif.text))
+        # Get instructor's department for admin matching
+        cur.execute("SELECT department FROM users WHERE username = %s", (notif.recipientUsername,))
+        row = cur.fetchone()
+        instructor_dept = (row["department"] or "") if row else ""
+
+        recipients = {notif.recipientUsername}
+
+        # All SUPER_ADMIN users receive every notification
+        cur.execute("SELECT username FROM users WHERE role = 'SUPER_ADMIN' AND username != %s",
+                    (notif.recipientUsername,))
+        for r in cur.fetchall():
+            recipients.add(r["username"])
+
+        # ADMIN users receive notification if their department matches (or they have no department)
+        cur.execute("SELECT username, department FROM users WHERE role = 'ADMIN' AND username != %s",
+                    (notif.recipientUsername,))
+        for r in cur.fetchall():
+            admin_dept = r["department"] or ""
+            if not admin_dept or admin_dept == instructor_dept:
+                recipients.add(r["username"])
+
+        for recipient in recipients:
+            cur.execute("INSERT INTO notifications (recipient_username, text) VALUES (%s,%s)",
+                        (recipient, notif.text))
+
         conn.commit()
     finally:
         cur.close()
@@ -1586,6 +1609,7 @@ def suggest_weekly_schedule(body: WeeklyScheduleRequest, token_data: dict = Depe
                                 inner_conflict = True
                                 break
                         else:
+                            # Non-COMMON: conflict with COMMON same-semester OR same-dept same-semester
                             if (None, semester, k) in assigned_slots:
                                 inner_conflict = True
                                 break
@@ -1625,8 +1649,8 @@ def suggest_weekly_schedule(body: WeeklyScheduleRequest, token_data: dict = Depe
                 if best:
                     break
 
-            # Fallback: if no valid slot found with full constraints, relax semester/COMMON conflicts
-            # Hard constraints kept: instructor availability + no instructor double-booking + free classroom
+            # Fallback: relax only classroom/spread optimizations
+            # Hard constraints kept: instructor availability + no instructor double-booking + semester conflict
             if best is None:
                 instr_slots_fb = instructor_occupied.get(lecturer, set())
                 if is_common:
@@ -1646,6 +1670,26 @@ def suggest_weekly_schedule(body: WeeklyScheduleRequest, token_data: dict = Depe
                             continue
                         if any(f"{day}_{s}" in instructor_occupied.get(lecturer, set()) for s in consec):
                             continue
+                        # Semester conflict — hard, never relax (correctly scoped)
+                        fb_sem_conflict = False
+                        for s in consec:
+                            slot_key = f"{day}_{s}"
+                            for ex in global_conflict_map.get(slot_key, []):
+                                if is_common and ex["dept"] == "COMMON":
+                                    fb_sem_conflict = True; break
+                                if ex["semester"] == semester:
+                                    if is_common or ex["dept"] == "COMMON" or ex["dept"] == dept:
+                                        fb_sem_conflict = True; break
+                            if fb_sem_conflict:
+                                break
+                            if is_common:
+                                if any(e[2] == slot_key and (e[1] == semester or e[0] is None) for e in assigned_slots):
+                                    fb_sem_conflict = True; break
+                            else:
+                                if (None, semester, slot_key) in assigned_slots or (dept, semester, slot_key) in assigned_slots:
+                                    fb_sem_conflict = True; break
+                        if fb_sem_conflict:
+                            continue
                         eligible = [c for c in all_classrooms
                                     if student_count == 0 or c["capacity"] >= student_count]
                         if not eligible:
@@ -1662,6 +1706,52 @@ def suggest_weekly_schedule(body: WeeklyScheduleRequest, token_data: dict = Depe
                             ):
                                 chosen_room = room
                                 break
+                        if chosen_room is None:
+                            continue
+                        best = (day, main_slot, consec, chosen_room)
+                        break
+                    if best:
+                        break
+
+            # Last resort: relax classroom booking, keep only instructor avail + semester + capacity
+            if best is None:
+                instr_slots_lr = instructor_occupied.get(lecturer, set())
+                lr_days = sorted(XAI_SCHEDULE_DAYS,
+                                 key=lambda d: sum(1 for k in instr_slots_lr if k.startswith(f"{d}_")))
+                for day in lr_days:
+                    for si in range(len(XAI_SCHEDULE_SLOTS)):
+                        if si + effective_duration > len(XAI_SCHEDULE_SLOTS):
+                            continue
+                        main_slot = XAI_SCHEDULE_SLOTS[si]
+                        consec = [XAI_SCHEDULE_SLOTS[si + k] for k in range(effective_duration)]
+                        if not all(f"{day}_{s}" in instr_avail for s in consec):
+                            continue
+                        if any(f"{day}_{s}" in instructor_occupied.get(lecturer, set()) for s in consec):
+                            continue
+                        lr_sem_conflict = False
+                        for s in consec:
+                            slot_key = f"{day}_{s}"
+                            for ex in global_conflict_map.get(slot_key, []):
+                                if is_common and ex["dept"] == "COMMON":
+                                    lr_sem_conflict = True; break
+                                if ex["semester"] == semester:
+                                    if is_common or ex["dept"] == "COMMON" or ex["dept"] == dept:
+                                        lr_sem_conflict = True; break
+                            if lr_sem_conflict:
+                                break
+                            if is_common:
+                                if any(e[2] == slot_key and (e[1] == semester or e[0] is None) for e in assigned_slots):
+                                    lr_sem_conflict = True; break
+                            else:
+                                if (None, semester, slot_key) in assigned_slots or (dept, semester, slot_key) in assigned_slots:
+                                    lr_sem_conflict = True; break
+                        if lr_sem_conflict:
+                            continue
+                        eligible = [c for c in all_classrooms
+                                    if student_count == 0 or c["capacity"] >= student_count]
+                        if not eligible:
+                            eligible = all_classrooms
+                        chosen_room = eligible[0] if eligible else (all_classrooms[0] if all_classrooms else None)
                         if chosen_room is None:
                             continue
                         best = (day, main_slot, consec, chosen_room)
@@ -1718,6 +1808,26 @@ def suggest_weekly_schedule(body: WeeklyScheduleRequest, token_data: dict = Depe
                                 continue
                             if any(f"{search_day}_{s}" in instructor_occupied.get(lecturer, set()) for s in l_consec):
                                 continue
+                            # Semester conflict for lab (hard, correctly scoped)
+                            lab_sem_conflict = False
+                            for s in l_consec:
+                                slot_key = f"{search_day}_{s}"
+                                for ex in global_conflict_map.get(slot_key, []):
+                                    if is_common and ex["dept"] == "COMMON":
+                                        lab_sem_conflict = True; break
+                                    if ex["semester"] == semester:
+                                        if is_common or ex["dept"] == "COMMON" or ex["dept"] == dept:
+                                            lab_sem_conflict = True; break
+                                if lab_sem_conflict:
+                                    break
+                                if is_common:
+                                    if any(e[2] == slot_key and (e[1] == semester or e[0] is None) for e in assigned_slots):
+                                        lab_sem_conflict = True; break
+                                else:
+                                    if (None, semester, slot_key) in assigned_slots or (dept, semester, slot_key) in assigned_slots:
+                                        lab_sem_conflict = True; break
+                            if lab_sem_conflict:
+                                continue
                             eligible_lab = [c for c in all_classrooms
                                             if student_count == 0 or c["capacity"] >= student_count]
                             if not eligible_lab:
@@ -1740,7 +1850,7 @@ def suggest_weekly_schedule(body: WeeklyScheduleRequest, token_data: dict = Depe
                                 break
                         if lab_best:
                             break
-                    # Lab fallback: ignore semester conflicts, keep instructor availability
+                    # Lab fallback: relax only classroom constraints, keep availability + semester conflict
                     if lab_best is None:
                         all_days_lab = sorted(
                             XAI_SCHEDULE_DAYS,
@@ -1755,6 +1865,26 @@ def suggest_weekly_schedule(body: WeeklyScheduleRequest, token_data: dict = Depe
                                 if not all(f"{search_day}_{s}" in instr_avail for s in l_consec):
                                     continue
                                 if any(f"{search_day}_{s}" in instructor_occupied.get(lecturer, set()) for s in l_consec):
+                                    continue
+                                # Semester conflict — hard, correctly scoped
+                                lab_fb_sem_conflict = False
+                                for s in l_consec:
+                                    slot_key = f"{search_day}_{s}"
+                                    for ex in global_conflict_map.get(slot_key, []):
+                                        if is_common and ex["dept"] == "COMMON":
+                                            lab_fb_sem_conflict = True; break
+                                        if ex["semester"] == semester:
+                                            if is_common or ex["dept"] == "COMMON" or ex["dept"] == dept:
+                                                lab_fb_sem_conflict = True; break
+                                    if lab_fb_sem_conflict:
+                                        break
+                                    if is_common:
+                                        if any(e[2] == slot_key and (e[1] == semester or e[0] is None) for e in assigned_slots):
+                                            lab_fb_sem_conflict = True; break
+                                    else:
+                                        if (None, semester, slot_key) in assigned_slots or (dept, semester, slot_key) in assigned_slots:
+                                            lab_fb_sem_conflict = True; break
+                                if lab_fb_sem_conflict:
                                     continue
                                 eligible_lab_fb = [c for c in all_classrooms
                                                    if student_count == 0 or c["capacity"] >= student_count]
@@ -1772,6 +1902,52 @@ def suggest_weekly_schedule(body: WeeklyScheduleRequest, token_data: dict = Depe
                                     ):
                                         chosen_lab_room = room
                                         break
+                                if chosen_lab_room:
+                                    lab_best = (search_day, l_slot, l_consec, chosen_lab_room)
+                                    break
+                            if lab_best:
+                                break
+
+                    # Lab last resort: relax classroom booking, keep only avail + semester + capacity
+                    if lab_best is None:
+                        lr_lab_days = sorted(
+                            XAI_SCHEDULE_DAYS,
+                            key=lambda d: sum(1 for k in instructor_occupied.get(lecturer, set()) if k.startswith(f"{d}_"))
+                        )
+                        for search_day in lr_lab_days:
+                            for si in range(len(XAI_SCHEDULE_SLOTS)):
+                                if si + lab_hrs > len(XAI_SCHEDULE_SLOTS):
+                                    continue
+                                l_slot = XAI_SCHEDULE_SLOTS[si]
+                                l_consec = [XAI_SCHEDULE_SLOTS[si + k] for k in range(lab_hrs)]
+                                if not all(f"{search_day}_{s}" in instr_avail for s in l_consec):
+                                    continue
+                                if any(f"{search_day}_{s}" in instructor_occupied.get(lecturer, set()) for s in l_consec):
+                                    continue
+                                lab_lr_sem_conflict = False
+                                for s in l_consec:
+                                    slot_key = f"{search_day}_{s}"
+                                    for ex in global_conflict_map.get(slot_key, []):
+                                        if is_common and ex["dept"] == "COMMON":
+                                            lab_lr_sem_conflict = True; break
+                                        if ex["semester"] == semester:
+                                            if is_common or ex["dept"] == "COMMON" or ex["dept"] == dept:
+                                                lab_lr_sem_conflict = True; break
+                                    if lab_lr_sem_conflict:
+                                        break
+                                    if is_common:
+                                        if any(e[2] == slot_key and (e[1] == semester or e[0] is None) for e in assigned_slots):
+                                            lab_lr_sem_conflict = True; break
+                                    else:
+                                        if (None, semester, slot_key) in assigned_slots or (dept, semester, slot_key) in assigned_slots:
+                                            lab_lr_sem_conflict = True; break
+                                if lab_lr_sem_conflict:
+                                    continue
+                                eligible_lr = [c for c in all_classrooms
+                                               if student_count == 0 or c["capacity"] >= student_count]
+                                if not eligible_lr:
+                                    eligible_lr = all_classrooms
+                                chosen_lab_room = eligible_lr[0] if eligible_lr else (all_classrooms[0] if all_classrooms else None)
                                 if chosen_lab_room:
                                     lab_best = (search_day, l_slot, l_consec, chosen_lab_room)
                                     break

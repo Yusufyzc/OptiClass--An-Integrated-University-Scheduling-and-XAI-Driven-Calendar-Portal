@@ -26,6 +26,7 @@ object AppRepository {
     val availabilityDrafts = mutableStateMapOf<String, Map<String, Set<String>>>()
     val scheduleHistory = mutableStateListOf<ScheduleChange>()
     var schedulingPhase by mutableStateOf("PHASE_1")
+    var currentUserDepartment by mutableStateOf("")
     val phasePriorities = mutableStateListOf<Int>()
     val commonCourseSlots = mutableStateMapOf<String, Set<String>>()
 
@@ -67,7 +68,7 @@ object AppRepository {
             users.add(User(
                 username = dto.username,
                 password = "",
-                role = if (dto.role == "ADMIN") UserRole.ADMIN else UserRole.INSTRUCTOR,
+                role = if (dto.role == "ADMIN" || dto.role == "SUPER_ADMIN") UserRole.ADMIN else UserRole.INSTRUCTOR,
                 fullName = dto.fullName,
                 email = dto.email ?: "",
                 department = dto.department ?: "",

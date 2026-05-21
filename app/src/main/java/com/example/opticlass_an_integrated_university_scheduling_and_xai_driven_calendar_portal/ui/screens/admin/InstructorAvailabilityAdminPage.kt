@@ -26,11 +26,19 @@ fun InstructorAvailabilityAdminPage(onRefresh: () -> Unit = {}) {
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            if (AppRepository.availabilities.isEmpty()) {
+            val adminDept = AppRepository.currentUserDepartment
+            val visibleAvailabilities = if (adminDept.isBlank()) {
+                AppRepository.availabilities.toList()
+            } else {
+                AppRepository.availabilities.filter { av ->
+                    AppRepository.courseImports.any { it.lecturer == av.instructorName && it.department == adminDept }
+                }
+            }
+            if (visibleAvailabilities.isEmpty()) {
                 Text("No submissions yet.")
             } else {
                 LazyColumn {
-                    items(AppRepository.availabilities) { availability ->
+                    items(visibleAvailabilities) { availability ->
                         val instructor = AppRepository.users.find { it.username == availability.instructorName }
                         val displayName = instructor?.fullName ?: availability.instructorName
                         Card(

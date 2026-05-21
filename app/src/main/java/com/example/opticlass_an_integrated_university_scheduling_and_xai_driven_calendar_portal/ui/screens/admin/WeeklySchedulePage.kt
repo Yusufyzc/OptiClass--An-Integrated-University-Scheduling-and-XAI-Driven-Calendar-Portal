@@ -86,7 +86,10 @@ fun WeeklySchedulePage(
     fun buildCurrentMap(): Map<String, Map<String, List<CellItem>>> {
         val map: MutableMap<String, MutableMap<String, MutableList<CellItem>>> =
             DAYS.associateWith { mutableMapOf<String, MutableList<CellItem>>() }.toMutableMap()
-        allUsers.filter { it.role == UserRole.INSTRUCTOR }.forEach { user ->
+        val adminDept = AppRepository.currentUserDepartment
+        val visibleInstructors = allUsers.filter { it.role == UserRole.INSTRUCTOR }
+            .let { list -> if (adminDept.isBlank()) list else list.filter { instr -> AppRepository.courseImports.any { it.lecturer == instr.username && it.department == adminDept } } }
+        visibleInstructors.forEach { user ->
             user.schedule.forEach { (day, slots) ->
                 slots.forEach { (slot, course) ->
                     if (course != null) {

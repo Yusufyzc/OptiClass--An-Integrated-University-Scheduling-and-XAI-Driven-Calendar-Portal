@@ -37,8 +37,10 @@ import java.io.InputStream
 fun DataImportPage(
     snackbarHostState: SnackbarHostState,
     onImport: (List<CourseImport>, (List<Pair<String, String>>) -> Unit) -> Unit = { _, _ -> },
-    onDeleteCourse: (String, (Boolean) -> Unit) -> Unit = { _, _ -> }
+    onDeleteCourse: (String, (Boolean) -> Unit) -> Unit = { _, _ -> },
+    onRefresh: () -> Unit = {}
 ) {
+    LaunchedEffect(Unit) { onRefresh() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isImporting by remember { mutableStateOf(false) }

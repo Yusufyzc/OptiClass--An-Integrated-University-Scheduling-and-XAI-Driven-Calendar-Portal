@@ -1020,7 +1020,10 @@ function buildCourseRows(courses) {
       <td><span class="badge badge-primary">${c.priority}</span></td>
       <td class="text-sm">${c.lectureHours}h / ${c.labHours}h</td>
       <td>${lecStatus} ${labStatus}</td>
-      <td><button class="btn btn-sm btn-danger" onclick="deleteCourseConfirm('${esc(c.code)}', '${esc(c.department)}', '${esc(c.email)}')">Delete</button></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm btn-secondary" style="margin-right:4px" onclick="openEditCourseModal('${esc(c.code)}','${esc(c.department)}','${esc(c.email)}','${esc(c.name)}',${c.semester},${c.studentCount},${c.priority},${c.lectureHours},${c.labHours},'${esc(c.lecturerUsername||'')}')">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteCourseConfirm('${esc(c.code)}', '${esc(c.department)}', '${esc(c.email)}')">Delete</button>
+      </td>
     </tr>`;
   }).join('');
 }
@@ -1035,6 +1038,95 @@ function filterCourses() {
   );
   const tbody = document.getElementById('courses-tbody');
   if (tbody) tbody.innerHTML = buildCourseRows(filtered);
+}
+
+async function openEditCourseModal(code, dept, email, name, semester, studentCount, priority, lectureHours, labHours, currentLecturer) {
+  let instructors = [];
+  try {
+    const users = await API.getUsers();
+    instructors = users.filter(u => u.role === 'INSTRUCTOR');
+  } catch (_) {}
+
+  const lecturerOptions = instructors.map(u =>
+    `<option value="${esc(u.username)}" ${u.username === currentLecturer ? 'selected' : ''}>${esc(u.fullName || u.username)} (${esc(u.username)})</option>`
+  ).join('');
+
+  openModal(`Edit Course: ${esc(code)}`, `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group">
+        <label>Course Code</label>
+        <input id="ec-code" class="form-control" value="${esc(code)}">
+        <small class="text-muted" style="font-size:11px">Changing cascades to all schedules.</small>
+      </div>
+      <div class="form-group">
+        <label>Course Name</label>
+        <input id="ec-name" class="form-control" value="${esc(name)}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Lecturer</label>
+      <select id="ec-lecturer" class="form-control">
+        <option value="">— keep current (${esc(currentLecturer || 'none')}) —</option>
+        ${lecturerOptions}
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+      <div class="form-group">
+        <label>Semester</label>
+        <input id="ec-semester" class="form-control" type="number" min="1" value="${semester}">
+      </div>
+      <div class="form-group">
+        <label>Student Count</label>
+        <input id="ec-studentcount" class="form-control" type="number" min="0" value="${studentCount}">
+      </div>
+      <div class="form-group">
+        <label>Priority</label>
+        <input id="ec-priority" class="form-control" type="number" min="1" value="${priority}">
+      </div>
+      <div class="form-group">
+        <label>Lecture Hours</label>
+        <input id="ec-lechours" class="form-control" type="number" min="0" value="${lectureHours}">
+      </div>
+      <div class="form-group">
+        <label>Lab Hours</label>
+        <input id="ec-labhours" class="form-control" type="number" min="0" value="${labHours}">
+      </div>
+    </div>
+    <p class="text-muted text-sm" style="margin-top:4px">Department and Email (PK) cannot be changed.</p>
+  `, `
+    <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+    <button class="btn btn-primary" onclick="submitEditCourse('${esc(code)}','${esc(dept)}','${esc(email)}')">Save</button>
+  `);
+}
+
+async function submitEditCourse(code, dept, email) {
+  const newCode = document.getElementById('ec-code')?.value.trim();
+  const name = document.getElementById('ec-name')?.value.trim();
+  const semester = parseInt(document.getElementById('ec-semester')?.value);
+  const studentCount = parseInt(document.getElementById('ec-studentcount')?.value);
+  const priority = parseInt(document.getElementById('ec-priority')?.value);
+  const lectureHours = parseInt(document.getElementById('ec-lechours')?.value);
+  const labHours = parseInt(document.getElementById('ec-labhours')?.value);
+  const lecturerUsername = document.getElementById('ec-lecturer')?.value || undefined;
+
+  if (!newCode) { toast('Course code is required', 'error'); return; }
+  if (!name) { toast('Course name is required', 'error'); return; }
+  if (isNaN(semester) || semester < 1) { toast('Semester must be ≥ 1', 'error'); return; }
+  if (isNaN(studentCount) || studentCount < 0) { toast('Student count must be ≥ 0', 'error'); return; }
+  if (isNaN(priority) || priority < 1) { toast('Priority must be ≥ 1', 'error'); return; }
+  if (isNaN(lectureHours) || lectureHours < 0) { toast('Lecture hours must be ≥ 0', 'error'); return; }
+  if (isNaN(labHours) || labHours < 0) { toast('Lab hours must be ≥ 0', 'error'); return; }
+
+  const payload = { name, semester, studentCount, priority, lectureHours, labHours };
+  if (newCode !== code) payload.newCode = newCode;
+  if (lecturerUsername) payload.lecturerUsername = lecturerUsername;
+
+  try {
+    await API.updateCourse(code, dept, email, payload);
+    toast('Course updated', 'success');
+    closeModal();
+    await renderCourses();
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 async function deleteCourseConfirm(code, dept, email) {
@@ -2152,6 +2244,7 @@ async function renderWeekly() {
         ✨ Generate XAI Suggestions
       </button>
       <button class="btn btn-ghost" style="margin-top:20px" onclick="renderWeekly()">↻ Refresh</button>
+      <button class="btn btn-ghost" style="margin-top:20px" onclick="exportWeeklyPDF()">🖨️ Save as PDF</button>
     </div>
 
     <div style="display:flex;gap:8px;margin-bottom:12px">
@@ -2242,6 +2335,36 @@ function buildCurrentScheduleGrid(schedules, instructorMap, classroomMap) {
 
   html += `</tbody></table></div>`;
   return html;
+}
+
+function exportWeeklyPDF() {
+  const schedules = state._weeklySchedules;
+  const instructorMap = state._weeklyInstructorMap || {};
+  const classroomMap = state._weeklyClassroomMap || {};
+  if (!schedules || schedules.length === 0) {
+    toast('No schedule data to export', 'error');
+    return;
+  }
+  const gridHtml = buildCurrentScheduleGrid(schedules, instructorMap, classroomMap);
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>Weekly Schedule — OptiClass</title>
+    <style>
+      body { font-family: Arial, sans-serif; font-size: 11px; margin: 16px; }
+      h2 { margin-bottom: 12px; font-size: 15px; }
+      table { border-collapse: collapse; width: 100%; }
+      th, td { border: 1px solid #ccc; padding: 3px 5px; vertical-align: top; min-width: 90px; }
+      th { background: #f0f0f0; font-weight: 600; text-align: center; }
+      td:first-child { font-size: 10px; white-space: nowrap; text-align: center; }
+      div[style*="font-size:9px"] { font-size: 9px !important; }
+      @media print { @page { size: landscape; margin: 10mm; } }
+    </style>
+  </head><body>
+    <h2>OptiClass — Weekly Schedule</h2>
+    ${gridHtml}
+    <script>window.onload = function(){ window.print(); }<\/script>
+  </body></html>`);
+  win.document.close();
 }
 
 async function generateWeekly() {

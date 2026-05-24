@@ -24,8 +24,10 @@ fun UserTransactionsPage(
     onAddUser: (String, String, String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _, _, _ -> },
     onDeleteUser: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
     onUpdateUser: (String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _ -> },
-    onResetPassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> }
+    onResetPassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> },
+    onRefresh: () -> Unit = {}
 ) {
+    LaunchedEffect(Unit) { onRefresh() }
     var showAddDialog by remember { mutableStateOf(false) }
     var userToDelete by remember { mutableStateOf<User?>(null) }
     var userToEdit by remember { mutableStateOf<User?>(null) }

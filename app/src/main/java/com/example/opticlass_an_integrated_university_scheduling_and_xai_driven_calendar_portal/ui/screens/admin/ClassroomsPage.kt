@@ -36,8 +36,10 @@ fun ClassroomsPage(
     snackbarHostState: SnackbarHostState,
     onAddClassroom: (Classroom, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
     onDeleteClassroom: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
-    onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> }
+    onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> },
+    onRefresh: () -> Unit = {}
 ) {
+    LaunchedEffect(Unit) { onRefresh() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isImporting by remember { mutableStateOf(false) }

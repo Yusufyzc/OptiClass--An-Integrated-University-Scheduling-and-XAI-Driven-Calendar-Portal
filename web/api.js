@@ -96,6 +96,7 @@ const API = {
   // Courses
   getCourses: () => apiFetch('/courses'),
   importCourses: (courses) => apiFetch('/courses/bulk', { method: 'POST', body: JSON.stringify(courses) }),
+  updateCourse: (code, department, email, data) => apiFetch(`/courses/${encodeURIComponent(code)}?department=${encodeURIComponent(department)}&email=${encodeURIComponent(email)}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteCourse: (code, department, email) => apiFetch(`/courses/${encodeURIComponent(code)}?department=${encodeURIComponent(department)}&email=${encodeURIComponent(email)}`, { method: 'DELETE' }),
 
   // Schedules

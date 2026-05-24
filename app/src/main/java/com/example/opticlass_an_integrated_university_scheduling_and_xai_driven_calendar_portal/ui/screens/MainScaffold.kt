@@ -53,6 +53,9 @@ fun OptiClassApp(viewModel: AppViewModel) {
                 onImportClassrooms = { list, cb -> viewModel.importClassrooms(list, cb) },
                 onRefreshInstructorData = { viewModel.refreshInstructorData() },
                 onRefreshAvailabilities = { viewModel.refreshAvailabilities() },
+                onRefreshClassrooms = { viewModel.refreshClassrooms() },
+                onRefreshCourses = { viewModel.refreshCourses() },
+                onRefreshUsers = { viewModel.refreshUsers() },
                 onSetSchedulingPhase = { phase, cb -> viewModel.setSchedulingPhase(phase, cb) },
                 onSendChatBotMessage = { msg, cb -> viewModel.sendChatBotMessage(msg, cb) },
                 onSuggestSchedule = { u, code, clsId, dur, type, cb -> viewModel.suggestScheduleSlot(u, code, dur, type, clsId, cb) },
@@ -89,6 +92,9 @@ fun MainScaffold(
     onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> },
     onRefreshInstructorData: () -> Unit = {},
     onRefreshAvailabilities: () -> Unit = {},
+    onRefreshClassrooms: () -> Unit = {},
+    onRefreshCourses: () -> Unit = {},
+    onRefreshUsers: () -> Unit = {},
     onSetSchedulingPhase: (String, (Boolean) -> Unit) -> Unit = { _, _ -> },
     onSendChatBotMessage: (String, (String) -> Unit) -> Unit = { _, _ -> },
     onSuggestSchedule: (username: String, courseCode: String, classroomId: String?, duration: Int, suggestionType: String, onResult: (XAISuggestionResponseDto?) -> Unit) -> Unit = { _, _, _, _, _, _ -> },
@@ -290,7 +296,8 @@ fun MainScaffold(
                         DataImportPage(
                             snackbarHostState,
                             onImport = onImportCourses,
-                            onDeleteCourse = onDeleteCourse
+                            onDeleteCourse = onDeleteCourse,
+                            onRefresh = onRefreshCourses
                         )
                     currentDestination == AppDestinations.USER_TRANSACTIONS ->
                         UserTransactionsPage(
@@ -298,7 +305,8 @@ fun MainScaffold(
                             onAddUser = onAddUser,
                             onDeleteUser = onDeleteUser,
                             onUpdateUser = onUpdateUser,
-                            onResetPassword = onResetPassword
+                            onResetPassword = onResetPassword,
+                            onRefresh = onRefreshUsers
                         )
                     currentDestination == AppDestinations.UPDATE_CALENDAR ->
                         UpdateCalendarPage(
@@ -313,7 +321,8 @@ fun MainScaffold(
                             snackbarHostState,
                             onAddClassroom = onAddClassroom,
                             onDeleteClassroom = onDeleteClassroom,
-                            onImportClassrooms = onImportClassrooms
+                            onImportClassrooms = onImportClassrooms,
+                            onRefresh = onRefreshClassrooms
                         )
                     currentDestination == AppDestinations.SETTINGS ->
                         SettingsPage(userName, onChangePassword = onChangePassword, onUpdateAvatar = onUpdateAvatar)

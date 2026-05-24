@@ -563,6 +563,33 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshClassrooms() {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.getClassrooms(authToken)
+                if (response.isSuccessful) AppRepository.syncClassrooms(response.body() ?: emptyList())
+            } catch (e: Exception) { Log.e("AppViewModel", "Refresh classrooms error", e) }
+        }
+    }
+
+    fun refreshCourses() {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.getCourses(authToken)
+                if (response.isSuccessful) AppRepository.syncCourses(response.body() ?: emptyList())
+            } catch (e: Exception) { Log.e("AppViewModel", "Refresh courses error", e) }
+        }
+    }
+
+    fun refreshUsers() {
+        viewModelScope.launch {
+            try {
+                val response = RetrofitClient.instance.getUsers(authToken)
+                if (response.isSuccessful) AppRepository.syncUsers(response.body() ?: emptyList())
+            } catch (e: Exception) { Log.e("AppViewModel", "Refresh users error", e) }
+        }
+    }
+
     fun refreshAvailabilities() {
         viewModelScope.launch {
             try {

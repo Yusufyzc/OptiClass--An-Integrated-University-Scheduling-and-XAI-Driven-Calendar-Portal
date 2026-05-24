@@ -551,6 +551,86 @@ def import_courses(courses: List[CourseDto], req: Request, token_data: dict = De
                f"{len(courses)} courses imported", get_client_ip(req), get_user_agent(req))
     return {"status": "ok"}
 
+class CourseUpdateDto(BaseModel):
+    name: Optional[str] = None
+    semester: Optional[int] = None
+    studentCount: Optional[int] = None
+    priority: Optional[int] = None
+    lectureHours: Optional[int] = None
+    labHours: Optional[int] = None
+    newCode: Optional[str] = None
+    lecturerUsername: Optional[str] = None
+
+@app.put("/courses/{code}", tags=["Courses"])
+def update_course(code: str, body: CourseUpdateDto, req: Request,
+                  department: str = Query(...), email: str = Query(...),
+                  token_data: dict = Depends(verify_token)):
+    if not is_admin(token_data):
+        raise HTTPException(status_code=403, detail="Only admins can update")
+    new_code = body.newCode.strip() if body.newCode and body.newCode.strip() else None
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        updates = []
+        values = []
+        if body.name is not None:
+            updates.append("name = %s"); values.append(body.name)
+        if body.semester is not None:
+            updates.append("semester = %s"); values.append(body.semester)
+        if body.studentCount is not None:
+            updates.append("student_count = %s"); values.append(body.studentCount)
+        if body.priority is not None:
+            updates.append("priority = %s"); values.append(body.priority)
+        if body.lectureHours is not None:
+            updates.append("lecture_hours = %s"); values.append(body.lectureHours)
+        if body.labHours is not None:
+            updates.append("lab_hours = %s"); values.append(body.labHours)
+        if body.lecturerUsername is not None:
+            updates.append("lecturer_username = %s"); values.append(body.lecturerUsername)
+        if new_code and new_code != code:
+            updates.append("code = %s"); values.append(new_code)
+        if not updates:
+            return {"status": "nothing to update"}
+        values.extend([code, department, email])
+        cur.execute(f"UPDATE courses SET {', '.join(updates)} WHERE code = %s AND department = %s AND email = %s", values)
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Course not found")
+        # Cascade code change into schedules JSON and history
+        if new_code and new_code != code:
+            cur.execute("SELECT instructor_username, slots FROM schedules")
+            for sched in cur.fetchall():
+                slots = sched["slots"]
+                if not slots:
+                    continue
+                modified = False
+                new_slots = {}
+                for slot_key, slot_val in slots.items():
+                    if slot_val and isinstance(slot_val, dict) and slot_val.get("code") == code:
+                        slot_val = dict(slot_val)
+                        slot_val["code"] = new_code
+                        modified = True
+                    new_slots[slot_key] = slot_val
+                if modified:
+                    cur.execute("UPDATE schedules SET slots = %s WHERE instructor_username = %s",
+                                [json.dumps(new_slots), sched["instructor_username"]])
+            cur.execute("UPDATE schedule_history SET previous_course_code = %s WHERE previous_course_code = %s",
+                        [new_code, code])
+            cur.execute("UPDATE schedule_history SET new_course_code = %s WHERE new_course_code = %s",
+                        [new_code, code])
+        conn.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+    log_action(token_data["sub"], token_data["role"], "UPDATE_COURSE",
+               new_code if (new_code and new_code != code) else code,
+               f"dept={department}", get_client_ip(req), get_user_agent(req))
+    return {"status": "ok"}
+
 @app.delete("/courses/{code}", tags=["Courses"])
 def delete_course(code: str, req: Request, token_data: dict = Depends(verify_token)):
     if not is_admin(token_data):

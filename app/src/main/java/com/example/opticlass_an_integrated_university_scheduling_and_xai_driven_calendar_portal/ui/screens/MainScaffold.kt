@@ -11,6 +11,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.XAISuggestionResponseDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.network.WeeklyScheduleResponseDto
+import com.example.opticlass_an_integrated_university_scheduling_and_xai_driven_calendar_portal.ui.screens.admin.WeeklySchedulePage
 import kotlinx.coroutines.launch
 
 @Composable
@@ -30,7 +33,7 @@ fun OptiClassApp(viewModel: AppViewModel) {
                 userName = viewModel.currentUserName,
                 onLogout = { viewModel.logout() },
                 onChangePassword = { current, new, cb -> viewModel.changePassword(current, new, cb) },
-                onAddUser = { u, p, r, fn, e, cb -> viewModel.addUser(u, p, r, fn, e, cb) },
+                onAddUser = { u, p, r, fn, e, dept, cb -> viewModel.addUser(u, p, r, fn, e, dept, cb) },
                 onDeleteUser = { u, cb -> viewModel.deleteUser(u, cb) },
                 onUpdateUser = { u, fn, e, r, cb -> viewModel.updateUser(u, fn, e, r, cb) },
                 onResetPassword = { u, np, cb -> viewModel.resetUserPassword(u, np, cb) },
@@ -50,7 +53,13 @@ fun OptiClassApp(viewModel: AppViewModel) {
                 onImportClassrooms = { list, cb -> viewModel.importClassrooms(list, cb) },
                 onRefreshInstructorData = { viewModel.refreshInstructorData() },
                 onRefreshAvailabilities = { viewModel.refreshAvailabilities() },
-                onSetSchedulingPhase = { phase, cb -> viewModel.setSchedulingPhase(phase, cb) }
+                onRefreshClassrooms = { viewModel.refreshClassrooms() },
+                onRefreshCourses = { viewModel.refreshCourses() },
+                onRefreshUsers = { viewModel.refreshUsers() },
+                onSetSchedulingPhase = { phase, cb -> viewModel.setSchedulingPhase(phase, cb) },
+                onSendChatBotMessage = { msg, cb -> viewModel.sendChatBotMessage(msg, cb) },
+                onSuggestSchedule = { u, code, clsId, dur, type, cb -> viewModel.suggestScheduleSlot(u, code, dur, type, clsId, cb) },
+                onSuggestWeeklySchedule = { phase, cb -> viewModel.suggestWeeklySchedule(phase, cb) }
             )
         }
     }
@@ -63,7 +72,7 @@ fun MainScaffold(
     userName: String,
     onLogout: () -> Unit,
     onChangePassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> },
-    onAddUser: (String, String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _, _ -> },
+    onAddUser: (String, String, String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _, _, _ -> },
     onDeleteUser: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
     onUpdateUser: (String, String, String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _, _, _ -> },
     onResetPassword: (String, String, (Boolean, String?) -> Unit) -> Unit = { _, _, _ -> },
@@ -83,7 +92,13 @@ fun MainScaffold(
     onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> },
     onRefreshInstructorData: () -> Unit = {},
     onRefreshAvailabilities: () -> Unit = {},
-    onSetSchedulingPhase: (String, (Boolean) -> Unit) -> Unit = { _, _ -> }
+    onRefreshClassrooms: () -> Unit = {},
+    onRefreshCourses: () -> Unit = {},
+    onRefreshUsers: () -> Unit = {},
+    onSetSchedulingPhase: (String, (Boolean) -> Unit) -> Unit = { _, _ -> },
+    onSendChatBotMessage: (String, (String) -> Unit) -> Unit = { _, _ -> },
+    onSuggestSchedule: (username: String, courseCode: String, classroomId: String?, duration: Int, suggestionType: String, onResult: (XAISuggestionResponseDto?) -> Unit) -> Unit = { _, _, _, _, _, _ -> },
+    onSuggestWeeklySchedule: (phase: String, onResult: (WeeklyScheduleResponseDto?) -> Unit) -> Unit = { _, _ -> }
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -252,7 +267,8 @@ fun MainScaffold(
                             onLoadMessages = onLoadMessages,
                             onLoadAllMessages = onLoadAllMessages,
                             onSendMessage = onSendMessage,
-                            onMarkMessagesRead = onMarkMessagesRead
+                            onMarkMessagesRead = onMarkMessagesRead,
+                            onRefresh = { onLoadAllMessages {} }
                         )
                     role == UserRole.INSTRUCTOR && currentDestination == AppDestinations.MAIN_PAGE ->
                         InstructorMainPage(userName, onNavigate = { currentDestination = it }, onShowNotifications = { showNotificationMenu = true }, onRefresh = onRefreshInstructorData)
@@ -280,7 +296,8 @@ fun MainScaffold(
                         DataImportPage(
                             snackbarHostState,
                             onImport = onImportCourses,
-                            onDeleteCourse = onDeleteCourse
+                            onDeleteCourse = onDeleteCourse,
+                            onRefresh = onRefreshCourses
                         )
                     currentDestination == AppDestinations.USER_TRANSACTIONS ->
                         UserTransactionsPage(
@@ -288,24 +305,31 @@ fun MainScaffold(
                             onAddUser = onAddUser,
                             onDeleteUser = onDeleteUser,
                             onUpdateUser = onUpdateUser,
-                            onResetPassword = onResetPassword
+                            onResetPassword = onResetPassword,
+                            onRefresh = onRefreshUsers
                         )
                     currentDestination == AppDestinations.UPDATE_CALENDAR ->
                         UpdateCalendarPage(
                             snackbarHostState, userName,
                             onSaveSchedule = { u, d, h -> onSaveSchedule(u, d, h) },
                             onSendNotification = onSendNotification,
-                            onSetSchedulingPhase = onSetSchedulingPhase
+                            onSetSchedulingPhase = onSetSchedulingPhase,
+                            onSuggestSchedule = onSuggestSchedule
                         )
                     currentDestination == AppDestinations.CLASSROOMS ->
                         ClassroomsPage(
                             snackbarHostState,
                             onAddClassroom = onAddClassroom,
                             onDeleteClassroom = onDeleteClassroom,
-                            onImportClassrooms = onImportClassrooms
+                            onImportClassrooms = onImportClassrooms,
+                            onRefresh = onRefreshClassrooms
                         )
                     currentDestination == AppDestinations.SETTINGS ->
                         SettingsPage(userName, onChangePassword = onChangePassword, onUpdateAvatar = onUpdateAvatar)
+                    currentDestination == AppDestinations.CHATBOT ->
+                        ChatBotPage(onSendMessage = onSendChatBotMessage)
+                    currentDestination == AppDestinations.WEEKLY_SCHEDULE ->
+                        WeeklySchedulePage(onSuggestWeekly = onSuggestWeeklySchedule)
                     else -> GenericPage(currentDestination.label)
                 }
             }

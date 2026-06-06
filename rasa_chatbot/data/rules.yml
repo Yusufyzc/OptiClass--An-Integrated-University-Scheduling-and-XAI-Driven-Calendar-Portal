@@ -1,0 +1,122 @@
+version: "3.1"
+
+rules:
+  - rule: Greet user
+    steps:
+      - intent: greet
+      - action: utter_greet
+
+  - rule: Say goodbye
+    steps:
+      - intent: goodbye
+      - action: utter_goodbye
+
+  - rule: Say thanks
+    steps:
+      - intent: thanks
+      - action: utter_thanks
+
+  - rule: Affirm
+    steps:
+      - intent: affirm
+      - action: utter_affirm
+
+  - rule: Deny
+    steps:
+      - intent: deny
+      - action: utter_deny
+
+  - rule: What is the app
+    steps:
+      - intent: ask_what_is_app
+      - action: utter_what_is_app
+
+  - rule: Navigate to schedule
+    steps:
+      - intent: ask_navigate_schedule
+      - action: utter_navigate_schedule
+
+  - rule: Navigate to availability
+    steps:
+      - intent: ask_navigate_availability
+      - action: utter_navigate_availability
+
+  - rule: Navigate to lectures
+    steps:
+      - intent: ask_navigate_lectures
+      - action: utter_navigate_lectures
+
+  - rule: Navigate to settings
+    steps:
+      - intent: ask_navigate_settings
+      - action: utter_navigate_settings
+
+  - rule: Navigate to messages
+    steps:
+      - intent: ask_navigate_messages
+      - action: utter_navigate_messages
+
+  - rule: Change password
+    steps:
+      - intent: ask_change_password
+      - action: utter_change_password
+
+  - rule: Import courses
+    steps:
+      - intent: ask_import_courses
+      - action: utter_import_courses
+
+  - rule: Manage classrooms
+    steps:
+      - intent: ask_manage_classrooms
+      - action: utter_manage_classrooms
+
+  - rule: Manage users
+    steps:
+      - intent: ask_manage_users
+      - action: utter_manage_users
+
+  - rule: Assign course
+    steps:
+      - intent: ask_assign_course
+      - action: utter_assign_course
+
+  - rule: Phase explanation
+    steps:
+      - intent: ask_phase_explanation
+      - action: utter_phase_explanation
+
+  - rule: Phase switch
+    steps:
+      - intent: ask_phase_switch
+      - action: utter_phase_switch
+
+  - rule: Common course
+    steps:
+      - intent: ask_common_course
+      - action: utter_common_course
+
+  - rule: Availability admin
+    steps:
+      - intent: ask_availability_admin
+      - action: utter_availability_admin
+
+  - rule: Send notification
+    steps:
+      - intent: ask_send_notification
+      - action: utter_send_notification
+
+  - rule: XAI explanation
+    steps:
+      - intent: ask_xai
+      - action: utter_xai
+
+  - rule: Out of scope
+    steps:
+      - intent: out_of_scope
+      - action: utter_out_of_scope
+
+  - rule: Fallback
+    steps:
+      - intent: nlu_fallback
+      - action: utter_default

@@ -1,0 +1,561 @@
+version: "3.1"
+
+nlu:
+  - intent: greet
+    examples: |
+      - hi
+      - hello
+      - hey
+      - good morning
+      - good afternoon
+      - howdy
+      - hi there
+      - hello there
+      - hey there
+      - greetings
+      - what's up
+      - sup
+      - yo
+      - good evening
+      - hi bot
+      - hello bot
+      - hey bot
+      - start
+      - help me
+      - hi I need help
+
+  - intent: goodbye
+    examples: |
+      - bye
+      - goodbye
+      - see you
+      - see you later
+      - good night
+      - talk to you later
+      - ciao
+      - take care
+      - i'm done
+      - exit
+      - quit
+      - close
+      - later
+      - bye bye
+      - that's all
+      - nothing else
+      - I'm finished
+      - done thanks
+      - no more questions
+
+  - intent: thanks
+    examples: |
+      - thanks
+      - thank you
+      - thanks a lot
+      - thank you so much
+      - great thanks
+      - that helped
+      - perfect thanks
+      - awesome thanks
+      - got it thanks
+      - ok thanks
+      - cheers
+      - much appreciated
+      - that's helpful
+      - perfect
+      - great
+      - awesome
+      - wonderful thanks
+      - that's what I needed
+      - thank you very much
+      - thx
+
+  - intent: affirm
+    examples: |
+      - yes
+      - sure
+      - of course
+      - definitely
+      - ok
+      - yep
+      - yeah
+      - absolutely
+      - correct
+      - that's right
+      - right
+      - exactly
+      - indeed
+      - true
+      - confirmed
+      - go ahead
+      - please do
+      - that works
+
+  - intent: deny
+    examples: |
+      - no
+      - nope
+      - not really
+      - no thanks
+      - i don't think so
+      - that's not right
+      - negative
+      - never mind
+      - skip it
+      - not now
+      - that's wrong
+      - incorrect
+
+  - intent: ask_what_is_app
+    examples: |
+      - what is opticlass
+      - what does this app do
+      - what can this application do
+      - explain opticlass
+      - what is this system for
+      - tell me about opticlass
+      - what is the purpose of this app
+      - describe opticlass
+      - what is this software
+      - what can I do here
+      - how does opticlass work
+      - what is this portal
+      - what does opticlass offer
+      - give me an overview
+      - what features does opticlass have
+      - what is this tool used for
+      - who uses opticlass
+      - what problem does opticlass solve
+      - introduction to opticlass
+
+  - intent: ask_navigate_schedule
+    examples: |
+      - where is my schedule
+      - how do I see my schedule
+      - where can I find my timetable
+      - how to view schedule
+      - where is the timetable
+      - I want to see my weekly schedule
+      - how to access schedule page
+      - show me my schedule
+      - find my schedule
+      - where are my classes
+      - how can I show my schedule
+      - how can I view my schedule
+      - can I see my schedule
+      - display my schedule
+      - check my schedule
+      - open my schedule
+      - go to schedule page
+      - navigate to my schedule
+      - my schedule
+      - my timetable
+      - view timetable
+      - check timetable
+      - open timetable
+      - see timetable
+      - where to find my schedule
+      - how to open schedule page
+      - my weekly timetable
+      - I want to check my timetable
+      - how to see what classes I have
+      - where do I see my teaching hours
+      - show schedule
+      - see schedule
+      - show timetable
+      - view my timetable
+      - where is my weekly plan
+      - how to find schedule
+      - I need to see my schedule
+      - I want to look at my schedule
+      - let me see my schedule
+      - can you show me my schedule
+      - how do I access my timetable
+      - schedule view
+      - look up my schedule
+
+  - intent: ask_navigate_availability
+    examples: |
+      - where is the availability form
+      - how do I fill my availability
+      - how to submit availability
+      - where can I set my available times
+      - how do I tell admin when I am free
+      - where is my availability page
+      - how to mark available time slots
+      - I need to fill availability
+      - how to enter availability
+      - where do I submit my free slots
+      - how can I submit my availability
+      - how do I set my free times
+      - where can I mark when I am available
+      - availability form location
+      - how to fill in availability
+      - I want to submit my availability
+      - how to update my availability
+      - how to tell when I am free
+      - set available hours
+      - mark my free time
+      - where to enter free slots
+      - how to add availability
+      - availability page
+      - I need to set my availability
+      - how do I indicate my free time
+      - submit free slots
+      - enter available time
+
+  - intent: ask_navigate_lectures
+    examples: |
+      - where are my lectures
+      - how to see my courses
+      - where is my lectures page
+      - how do I view my assigned courses
+      - show me my lectures
+      - where can I find my assigned classes
+      - list my courses
+      - what courses am I teaching
+      - how to view my lectures
+      - where is my course list
+      - show my assigned courses
+      - how can I see my lectures
+      - my lectures page
+      - see my courses
+      - view my courses
+      - what classes am I teaching
+      - my assigned lectures
+      - find my lectures
+      - where to see assigned courses
+      - how do I check my courses
+      - I want to see my courses
+      - display my lectures
+      - course list
+      - lecture list
+
+  - intent: ask_navigate_settings
+    examples: |
+      - where is settings
+      - how to change my profile
+      - where can I upload avatar
+      - how to update profile picture
+      - how to access settings
+      - where is my account settings
+      - how to change profile photo
+      - settings page
+      - how to change my name
+      - where are account options
+      - how to update my information
+      - profile settings
+      - account settings
+      - where is my profile
+      - how to edit profile
+      - change avatar
+      - update photo
+      - how to personalize my account
+      - where to find settings
+      - open settings
+
+  - intent: ask_navigate_messages
+    examples: |
+      - how to message admin
+      - where is the chat
+      - how do I contact admin
+      - where are my messages
+      - how to send a message
+      - where is the notifications page
+      - how to communicate with admin
+      - I want to chat with admin
+      - how to reach admin
+      - where do I write to admin
+      - how to send message to admin
+      - where is inbox
+      - how to open chat
+      - messaging page
+      - how can I contact admin
+      - I need to send a message
+      - how do I write to admin
+      - chat with administrator
+      - send message
+      - open messages
+      - find messages page
+      - contact administrator
+      - how to talk to admin
+
+  - intent: ask_change_password
+    examples: |
+      - how to change my password
+      - how do I update my password
+      - where can I change password
+      - I want to change my password
+      - how to set new password
+      - password change
+      - update password
+      - where is password settings
+      - how to reset my own password
+      - what are the password requirements
+      - how to update my password
+      - change password page
+      - password update
+      - how to set a new password
+      - I need to change my password
+      - where do I change password
+      - how to modify password
+      - password rules
+      - what characters does password need
+      - minimum password length
+      - password must have uppercase
+      - how secure does my password need to be
+
+  - intent: ask_import_courses
+    examples: |
+      - how to import courses
+      - how do I upload the excel file
+      - what is the excel format for courses
+      - how to add courses from file
+      - how to bulk import courses
+      - what columns does the excel need
+      - how to load course data
+      - what format should the import file be
+      - excel import format
+      - how to add many courses at once
+      - what does the import excel look like
+      - how many columns in the excel
+      - how to upload courses
+      - excel file format
+      - import courses from excel
+      - how to add course list
+      - what is the excel template
+      - course import format
+      - how to bulk upload courses
+      - upload excel for courses
+      - import course data
+      - what columns are needed in excel
+      - how to prepare the excel file
+
+  - intent: ask_manage_classrooms
+    examples: |
+      - how to add a classroom
+      - how do I add a room
+      - how to delete a classroom
+      - where is classrooms page
+      - how to manage classrooms
+      - how to import classrooms
+      - how do I add rooms to the system
+      - add new room
+      - classroom management
+      - how to remove a classroom
+      - how to add a new classroom
+      - room management
+      - where to manage rooms
+      - add room to system
+      - delete a room
+      - how to create a classroom
+      - classroom list
+      - where are classrooms
+      - how to view all rooms
+      - manage rooms
+
+  - intent: ask_manage_users
+    examples: |
+      - how to add a user
+      - how do I create an instructor account
+      - how to delete a user
+      - how to edit user information
+      - where is user management
+      - how to reset user password
+      - how to manage instructor accounts
+      - where is user transactions page
+      - add instructor
+      - delete instructor
+      - edit user
+      - user management
+      - how to create a new user
+      - how to remove a user
+      - how to update user details
+      - add a new instructor
+      - create instructor account
+      - how to add new instructor
+      - where to manage instructors
+      - user list
+      - how to view all users
+      - manage instructors
+      - how to change user role
+
+  - intent: ask_assign_course
+    examples: |
+      - how to assign a course to a time slot
+      - how do I create a schedule for an instructor
+      - how to place a course on the grid
+      - how to assign classes
+      - how to set up the schedule
+      - how do I use update calendar
+      - how to schedule courses
+      - how to assign classroom to a course
+      - how to put a course in a time slot
+      - assign lecture
+      - how to fill the schedule grid
+      - how to book a classroom for a course
+      - how to assign a lecture time
+      - course assignment
+      - how to place courses in timetable
+      - how to build instructor schedule
+      - update calendar page
+      - how to manually assign a course
+      - assign course to instructor
+      - place lecture on grid
+      - how to schedule a lecture
+      - how to add course to schedule
+      - how to use the scheduling grid
+      - how to assign lab hours
+      - how to schedule lab
+
+  - intent: ask_phase_explanation
+    examples: |
+      - what is a scheduling phase
+      - what are phases
+      - how do phases work
+      - explain the phase system
+      - what does phase 1 mean
+      - how many phases are there
+      - what is the purpose of phases
+      - why does the system have phases
+      - phase system explanation
+      - how are phases determined
+      - what is phase based scheduling
+      - why are there multiple phases
+      - what determines the number of phases
+      - how does priority relate to phases
+      - what is priority in scheduling
+      - explain priorities
+      - what does priority number mean
+      - how are courses grouped into phases
+      - phase priority explanation
+      - what is phase 2
+
+  - intent: ask_phase_switch
+    examples: |
+      - how to switch to next phase
+      - how do I go to phase 2
+      - how to advance to the next phase
+      - when should I move to next phase
+      - how to complete current phase
+      - how to transition between phases
+      - move to next phase
+      - go to next scheduling phase
+      - phase transition
+      - how to finish current phase
+      - how to proceed to next phase
+      - when to switch phases
+      - phase 2 button
+      - how to click next phase
+      - I want to go to next phase
+      - advance phase
+      - complete phase and move on
+
+  - intent: ask_common_course
+    examples: |
+      - what is a common course
+      - what does COMMON department mean
+      - what are common courses
+      - explain common courses
+      - what is the difference between common and regular courses
+      - why are some courses marked as COMMON
+      - what does COMMON mean in the department column
+      - common course explanation
+      - what is COMMON in excel
+      - shared course meaning
+      - what is a shared course
+      - common department explanation
+      - why use COMMON as department
+      - courses taken by multiple departments
+      - what is a cross department course
+      - how to mark a course as common
+      - COMMON course scheduling
+      - how are common courses handled differently
+
+  - intent: ask_availability_admin
+    examples: |
+      - how to view instructor availability
+      - where can I see instructor availability
+      - how to check if instructors submitted availability
+      - how to refresh availability data
+      - where is instructor availability page
+      - how to see who submitted availability
+      - admin availability view
+      - check instructor free slots
+      - how to see all instructor availabilities
+      - view submitted availabilities
+      - who has submitted availability
+      - how to refresh availability
+      - check availability status
+      - instructor availability admin page
+      - see instructor free times
+      - how to monitor availability submissions
+
+  - intent: ask_send_notification
+    examples: |
+      - how to send notification to instructor
+      - how do I notify instructors
+      - how to send a message to instructor
+      - where is the notification feature
+      - how to alert instructors about schedule changes
+      - send notification
+      - notify an instructor
+      - how to notify about schedule update
+      - send alert to instructor
+      - how to inform instructor of changes
+      - notification to instructor
+      - how to push notification
+      - alert instructor
+      - how do notifications work
+      - send schedule notification
+
+  - intent: ask_xai
+    examples: |
+      - what is the AI suggestion
+      - how does xai work
+      - what is explainable ai
+      - how does the automatic scheduling work
+      - how does the AI assign courses
+      - what is the suggest feature
+      - how does the algorithm recommend time slots
+      - how does AI help with scheduling
+      - explain the AI
+      - automated scheduling explanation
+      - what does suggest button do
+      - how does the suggestion feature work
+      - what is the suggest best slot button
+      - how does AI pick time slots
+      - xai explanation
+      - what is decision tree scheduling
+      - how does the scoring work
+      - what are the scheduling criteria
+      - how to use AI suggestion
+      - suggest best slot explanation
+      - what factors does AI consider
+      - how to generate AI schedule
+      - weekly schedule suggestion
+      - what is generate button in weekly schedule
+      - how to use generate feature
+      - AI weekly schedule
+
+  - intent: out_of_scope
+    examples: |
+      - what is the weather today
+      - tell me a joke
+      - what is 2 plus 2
+      - who are you
+      - what time is it
+      - play music
+      - I want to order food
+      - what movies are playing
+      - tell me about history
+      - what is the capital of france
+      - write me a poem
+      - what is the meaning of life
+      - how do I cook pasta
+      - what is the stock price
+      - tell me about sports
+      - what is artificial intelligence
+      - who is the president
+      - what is the best phone
+      - recommend a movie
+      - how is the economy

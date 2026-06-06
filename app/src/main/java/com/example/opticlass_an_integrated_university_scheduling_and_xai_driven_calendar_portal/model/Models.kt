@@ -37,7 +37,11 @@ data class CourseImport(
     val classroomId: String? = null,
     val semester: Int = 1,
     val studentCount: Int = 0,
-    val priority: Int = 1
+    val priority: Int = 1,
+    val lectureHours: Int = 0,
+    val labHours: Int = 0,
+    val lectureAssigned: Boolean = false,
+    val labAssigned: Boolean? = null
 )
 
 data class Classroom(
@@ -71,7 +75,7 @@ data class User(
 )
 
 enum class UserRole {
-    ADMIN, INSTRUCTOR
+    ADMIN, INSTRUCTOR, SUPER_ADMIN
 }
 
 enum class AppDestinations(
@@ -90,5 +94,7 @@ enum class AppDestinations(
     UPDATE_CALENDAR("Update Calendar", Icons.Default.Edit, roleRestriction = UserRole.ADMIN),
     INSTRUCTOR_AVAILABILITY("Instructor Availability", Icons.AutoMirrored.Filled.List, roleRestriction = UserRole.ADMIN),
     CLASSROOMS("Classrooms", Icons.Default.School, roleRestriction = UserRole.ADMIN),
+    WEEKLY_SCHEDULE("Weekly Schedule", Icons.Default.DateRange, roleRestriction = UserRole.ADMIN),
     SETTINGS("Settings", Icons.Default.Settings),
+    CHATBOT("Assistant", Icons.Default.Chat),
 }

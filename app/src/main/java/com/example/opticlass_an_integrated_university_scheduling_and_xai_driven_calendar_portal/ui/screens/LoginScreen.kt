@@ -116,6 +116,13 @@ fun ForceChangePasswordScreen(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Min 8 chars · uppercase · lowercase · number · special char (!@#\$…)",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = androidx.compose.ui.Modifier.fillMaxWidth()
+        )
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = confirmPassword,
@@ -131,8 +138,9 @@ fun ForceChangePasswordScreen(
         Spacer(Modifier.height(24.dp))
         Button(
             onClick = {
+                val pwError = validatePassword(newPassword)
                 when {
-                    newPassword.length < 6 -> errorMsg = "New password must be at least 6 characters"
+                    pwError != null -> errorMsg = pwError
                     newPassword != confirmPassword -> errorMsg = "Passwords do not match"
                     else -> {
                         isLoading = true

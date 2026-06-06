@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -23,13 +24,18 @@ fun AdminMainPage(
     onLoadMessages: (withUser: String, () -> Unit) -> Unit = { _, _ -> },
     onLoadAllMessages: (() -> Unit) -> Unit = { _ -> },
     onSendMessage: (toUser: String, content: String, (Boolean) -> Unit) -> Unit = { _, _, _ -> },
-    onMarkMessagesRead: (sender: String) -> Unit = { _ -> }
+    onMarkMessagesRead: (sender: String) -> Unit = { _ -> },
+    onRefresh: () -> Unit = {}
 ) {
     var selectedUser by remember { mutableStateOf<String?>(null) }
     var showNewChatDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         onLoadAllMessages {}
+        while (true) {
+            delay(30_000L)
+            onRefresh()
+        }
     }
 
     val conversationUsers = AppRepository.messages

@@ -161,8 +161,30 @@ interface ApiService {
         @Body body: SchedulingPhaseDto
     ): Response<Unit>
 
+    @GET("settings/phase_priorities")
+    suspend fun getPhasePriorities(@Header("Authorization") token: String): Response<PhasePrioritiesDto>
+
     @GET("common_course_slots")
     suspend fun getCommonCourseSlots(@Header("Authorization") token: String): Response<Map<String, List<String>>>
+
+    @POST("chatbot")
+    suspend fun sendChatBotMessage(
+        @Header("Authorization") token: String,
+        @Body body: ChatBotRequest
+    ): Response<ChatBotResponse>
+
+    @POST("schedule/suggest/{username}")
+    suspend fun suggestSchedule(
+        @Header("Authorization") token: String,
+        @Path("username") username: String,
+        @Body body: XAISuggestionRequest
+    ): Response<XAISuggestionResponseDto>
+
+    @POST("schedule/suggest-weekly")
+    suspend fun suggestWeeklySchedule(
+        @Header("Authorization") token: String,
+        @Body body: WeeklyScheduleRequest
+    ): Response<WeeklyScheduleResponseDto>
 }
 
 data class LoginRequest(val username: String, val passwordHash: String)
@@ -171,7 +193,8 @@ data class LoginResponse(
     val token: String,
     val role: String,
     val username: String,
-    val mustChangePassword: Boolean
+    val mustChangePassword: Boolean,
+    val department: String? = null
 )
 
 data class UserDto(
@@ -217,10 +240,16 @@ data class CourseDto(
     val classroomId: String?,
     val semester: Int = 1,
     val studentCount: Int = 0,
-    val priority: Int = 1
+    val priority: Int = 1,
+    val lectureHours: Int = 0,
+    val labHours: Int = 0,
+    val lecture_assigned: Boolean = false,
+    val lab_assigned: Boolean? = null
 )
 
 data class SchedulingPhaseDto(val phase: String)
+
+data class PhasePrioritiesDto(val phasePriorities: List<Int>)
 
 data class AvailabilityDto(
     val instructorUsername: String,
@@ -257,4 +286,75 @@ data class NotificationDto(
     val recipientUsername: String,
     val text: String,
     val isRead: Boolean = false
+)
+
+data class ChatBotRequest(val message: String)
+
+data class ChatBotResponse(val response: String)
+
+data class XAISuggestionRequest(
+    val courseCode: String,
+    val duration: Int = 1,
+    val lectureHours: Int = 0,
+    val labHours: Int = 0,
+    val suggestionType: String = "lecture",
+    val classroomId: String? = null
+)
+
+data class DTNodeResultDto(
+    val node: String,
+    val label: String,
+    val result: String,
+    val description: String,
+    val isHard: Boolean,
+    val weight: Float = 0f,
+    val scoreContribution: Float = 0f
+)
+
+data class XAISlotSuggestionDto(
+    val day: String,
+    val timeSlot: String,
+    val classroomId: String?,
+    val classroomCode: String?,
+    val score: Float,
+    val path: List<DTNodeResultDto>,
+    val summary: String
+)
+
+data class XAISuggestionResponseDto(
+    val suggestions: List<XAISlotSuggestionDto>,
+    val courseCode: String,
+    val courseName: String,
+    val algorithmNote: String,
+    val suggestionType: String = "lecture"
+)
+
+data class WeeklyScheduleRequest(val phase: String)
+
+data class WeeklySlotDto(
+    val day: String,
+    val timeSlot: String,
+    val courseCode: String,
+    val courseName: String,
+    val lecturerUsername: String,
+    val lecturerFullName: String,
+    val classroomCode: String,
+    val department: String,
+    val semester: Int,
+    val priority: Int,
+    val duration: Int = 1,
+    val isLab: Boolean = false
+)
+
+data class WeeklySuggestionDto(
+    val title: String,
+    val description: String,
+    val assignments: List<WeeklySlotDto>,
+    val unassignedCourses: List<String>
+)
+
+data class WeeklyScheduleResponseDto(
+    val suggestions: List<WeeklySuggestionDto>,
+    val phase: String,
+    val algorithmNote: String
 )

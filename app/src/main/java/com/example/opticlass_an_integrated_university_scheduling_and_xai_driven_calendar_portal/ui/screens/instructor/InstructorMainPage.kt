@@ -74,6 +74,7 @@ fun InstructorMainPage(userName: String, onNavigate: (AppDestinations) -> Unit =
         }
 
         Card(
+            onClick = { onNavigate(AppDestinations.MY_AVAILABILITY) },
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
                 containerColor = if (availabilitySubmitted)
@@ -91,8 +92,14 @@ fun InstructorMainPage(userName: String, onNavigate: (AppDestinations) -> Unit =
                 Spacer(Modifier.width(12.dp))
                 Text(
                     if (availabilitySubmitted) "Availability submitted to admin"
-                    else "Availability not submitted yet — go to 'My Availability'",
-                    fontWeight = FontWeight.Medium
+                    else "Availability not submitted yet — tap to fill",
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = if (availabilitySubmitted) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
                 )
             }
         }

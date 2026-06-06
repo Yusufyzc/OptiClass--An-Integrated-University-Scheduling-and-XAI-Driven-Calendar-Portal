@@ -36,8 +36,10 @@ fun ClassroomsPage(
     snackbarHostState: SnackbarHostState,
     onAddClassroom: (Classroom, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
     onDeleteClassroom: (String, (Boolean, String?) -> Unit) -> Unit = { _, _ -> },
-    onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> }
+    onImportClassrooms: (List<Classroom>, (Int, Int) -> Unit) -> Unit = { _, _ -> },
+    onRefresh: () -> Unit = {}
 ) {
+    LaunchedEffect(Unit) { onRefresh() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isImporting by remember { mutableStateOf(false) }
@@ -300,7 +302,7 @@ fun AddClassroomDialog(onDismiss: () -> Unit, onAdd: (Classroom) -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = roomCode, onValueChange = { roomCode = it }, label = { Text("Room Code (e.g. A101)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = capacity, onValueChange = { capacity = it }, label = { Text("Capacity") }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+                OutlinedTextField(value = capacity, onValueChange = { capacity = it.filter { c -> c.isDigit() } }, label = { Text("Capacity") }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
                 if (errorMsg.isNotEmpty()) {
                     Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }

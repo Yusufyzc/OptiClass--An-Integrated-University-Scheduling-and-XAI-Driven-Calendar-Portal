@@ -37,8 +37,10 @@ import java.io.InputStream
 fun DataImportPage(
     snackbarHostState: SnackbarHostState,
     onImport: (List<CourseImport>, (List<Pair<String, String>>) -> Unit) -> Unit = { _, _ -> },
-    onDeleteCourse: (String, (Boolean) -> Unit) -> Unit = { _, _ -> }
+    onDeleteCourse: (String, (Boolean) -> Unit) -> Unit = { _, _ -> },
+    onRefresh: () -> Unit = {}
 ) {
+    LaunchedEffect(Unit) { onRefresh() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isImporting by remember { mutableStateOf(false) }
@@ -121,18 +123,18 @@ fun DataImportPage(
                             .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(4.dp))
                             .padding(4.dp)
                     ) {
-                        listOf("Code", "Name", "Lecturer", "Dept", "Email", "Term", "Students").forEach {
+                        listOf("Code", "Name", "Lecturer", "Dept", "Email", "Term", "Students", "Priority", "LecHrs", "LabHrs").forEach {
                             Text(it, modifier = Modifier.weight(1f), fontSize = 9.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                     Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp, start = 4.dp, end = 4.dp)) {
-                        listOf("C101", "Intro...", "John D.", "CS", "john@...", "3", "120").forEach {
+                        listOf("C101", "Intro...", "John D.", "CS", "john@...", "3", "120", "1", "2", "1").forEach {
                             Text(it, modifier = Modifier.weight(1f), fontSize = 8.sp, textAlign = TextAlign.Center, color = Color.Gray)
                         }
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "Set Dept to \"COMMON\" to mark the course as a shared course. Term = semester number, Students = student count. Instructor accounts are created automatically.",
+                        "Set Dept to \"COMMON\" to mark the course as a shared course. Term = semester number, Students = student count, LecHrs = lecture hours, LabHrs = lab hours. Instructor accounts are created automatically.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp
@@ -248,6 +250,23 @@ fun DataImportPage(
                                                 Text("${course.studentCount}", fontSize = 10.sp, color = Color.Gray)
                                             }
                                         }
+                                        if (course.lectureHours > 0 || course.labHours > 0) {
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    buildString {
+                                                        if (course.lectureHours > 0) append("L:${course.lectureHours}h")
+                                                        if (course.lectureHours > 0 && course.labHours > 0) append(" ")
+                                                        if (course.labHours > 0) append("Lab:${course.labHours}h")
+                                                    },
+                                                    fontSize = 10.sp,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                                 IconButton(onClick = { previewList = previewList - course }) {
@@ -349,33 +368,35 @@ fun SavedCoursesSection(
                 if (savedCourses.isEmpty()) {
                     Text("No saved courses.", color = Color.Gray, fontSize = 13.sp)
                 } else {
-                    savedCourses.forEach { course ->
-                        Row(
-                            modifier = androidx.compose.ui.Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.primary,
-                                shape = RoundedCornerShape(4.dp),
-                                modifier = androidx.compose.ui.Modifier.padding(end = 8.dp)
+                    LazyColumn(modifier = Modifier.heightIn(max = 280.dp)) {
+                        items(savedCourses) { course ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    course.code,
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = androidx.compose.ui.Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.padding(end = 8.dp)
+                                ) {
+                                    Text(
+                                        course.code,
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(course.name, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                                    Text(course.lecturer, fontSize = 11.sp, color = Color.Gray, maxLines = 1)
+                                }
+                                IconButton(onClick = { onDeleteCourse(course) }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                }
                             }
-                            Column(modifier = androidx.compose.ui.Modifier.weight(1f)) {
-                                Text(course.name, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-                                Text(course.lecturer, fontSize = 11.sp, color = Color.Gray, maxLines = 1)
-                            }
-                            IconButton(onClick = { onDeleteCourse(course) }, modifier = androidx.compose.ui.Modifier.size(32.dp)) {
-                                Icon(Icons.Default.Clear, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = androidx.compose.ui.Modifier.size(18.dp))
-                            }
+                            HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
                         }
-                        HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
                     }
                 }
             }
@@ -397,6 +418,7 @@ private suspend fun importExcelData(context: Context, uri: Uri): List<CourseImpo
             if (rows.hasNext()) rows.next()
 
             val importedList = mutableListOf<CourseImport>()
+            val seenKeys = mutableSetOf<Triple<String, String, String>>() // (code, department, email)
             while (rows.hasNext()) {
                 val row = rows.next()
                 val code = formatter.formatCellValue(row.getCell(0)).trim()
@@ -407,10 +429,16 @@ private suspend fun importExcelData(context: Context, uri: Uri): List<CourseImpo
                 val semester = formatter.formatCellValue(row.getCell(5)).trim().toIntOrNull() ?: 1
                 val studentCount = formatter.formatCellValue(row.getCell(6)).trim().toIntOrNull() ?: 0
                 val priority = formatter.formatCellValue(row.getCell(7)).trim().toIntOrNull() ?: 1
+                val lectureHours = formatter.formatCellValue(row.getCell(8)).trim().toIntOrNull() ?: 0
+                val labHours = formatter.formatCellValue(row.getCell(9)).trim().toIntOrNull() ?: 0
 
                 if (code.isNotEmpty() && name.isNotEmpty() && isValidEmail(email)) {
-                    importedList.add(CourseImport(code, name, lecturer, department, email,
-                        semester = semester, studentCount = studentCount, priority = priority))
+                    val key = Triple(code, department, email)
+                    if (seenKeys.add(key)) {
+                        importedList.add(CourseImport(code, name, lecturer, department, email,
+                            semester = semester, studentCount = studentCount, priority = priority,
+                            lectureHours = lectureHours, labHours = labHours))
+                    }
                 }
             }
 

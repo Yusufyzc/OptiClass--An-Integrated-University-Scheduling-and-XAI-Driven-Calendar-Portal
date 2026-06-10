@@ -38,7 +38,8 @@ fun UpdateCalendarPage(
     onSaveSchedule: (username: String, draft: Map<String, SnapshotStateMap<String, CourseImport?>>, historyEntries: List<ScheduleChange>) -> Unit = { _, _, _ -> },
     onSendNotification: (recipientUsername: String, text: String) -> Unit = { _, _ -> },
     onSetSchedulingPhase: (String, (Boolean) -> Unit) -> Unit = { _, _ -> },
-    onSuggestSchedule: (username: String, courseCode: String, classroomId: String?, duration: Int, suggestionType: String, onResult: (XAISuggestionResponseDto?) -> Unit) -> Unit = { _, _, _, _, _, _ -> }
+    onSuggestSchedule: (username: String, courseCode: String, classroomId: String?, duration: Int, suggestionType: String, onResult: (XAISuggestionResponseDto?) -> Unit) -> Unit = { _, _, _, _, _, _ -> },
+    onRefreshAvailabilities: () -> Unit = {}
 ) {
     var expanded by remember { mutableStateOf(false) }
     var selectedUser by remember { mutableStateOf<User?>(null) }
@@ -70,6 +71,7 @@ fun UpdateCalendarPage(
     var assignmentMode by remember { mutableStateOf<String?>(null) }  // "lecture" | "lab" | null
     var selectedClassroom by remember { mutableStateOf<Classroom?>(null) }
     var suggestionClassroomDropdownExpanded by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { onRefreshAvailabilities() }
     LaunchedEffect(selectedCourseToAssign) { assignmentMode = null; selectedClassroom = null }
     var classroomDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -80,10 +82,15 @@ fun UpdateCalendarPage(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Update Calendar", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            OutlinedButton(onClick = { showHistoryDialog = true }) {
-                Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("History")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { onRefreshAvailabilities() }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh availabilities")
+                }
+                OutlinedButton(onClick = { showHistoryDialog = true }) {
+                    Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("History")
+                }
             }
         }
         Spacer(modifier = Modifier.height(24.dp))

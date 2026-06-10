@@ -314,7 +314,8 @@ fun MainScaffold(
                             onSaveSchedule = { u, d, h -> onSaveSchedule(u, d, h) },
                             onSendNotification = onSendNotification,
                             onSetSchedulingPhase = onSetSchedulingPhase,
-                            onSuggestSchedule = onSuggestSchedule
+                            onSuggestSchedule = onSuggestSchedule,
+                            onRefreshAvailabilities = onRefreshAvailabilities
                         )
                     currentDestination == AppDestinations.CLASSROOMS ->
                         ClassroomsPage(

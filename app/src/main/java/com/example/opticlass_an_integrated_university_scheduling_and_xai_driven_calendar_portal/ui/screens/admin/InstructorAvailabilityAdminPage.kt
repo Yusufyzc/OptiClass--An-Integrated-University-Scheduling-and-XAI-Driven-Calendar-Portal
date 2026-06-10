@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.dp
 fun InstructorAvailabilityAdminPage(onRefresh: () -> Unit = {}) {
     var selectedInstructor by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(Unit) { onRefresh() }
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         if (selectedInstructor == null) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
